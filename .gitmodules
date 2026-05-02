@@ -1,0 +1,3 @@
+[submodule "External/stylus"]
+	path = External/stylus
+	url = https://github.com/greghcarr/stylus.git
