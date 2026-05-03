@@ -2,14 +2,23 @@ import Foundation
 
 final class LibraryStore: ObservableObject
 {
-    @Published private(set) var tracks:     [Track] = []
-    @Published private(set) var isScanning: Bool    = false
+    @Published private(set) var tracks:        [Track] = []
+    @Published private(set) var isScanning:    Bool    = false
+    @Published private(set) var scannedCount:  Int     = 0
+    @Published private(set) var expectedCount: Int     = 0
 
     private var handle:     StylusLibraryHandle?
     // Holds the in-flight fresh-scan results. When the scan completes we swap
     // this in for `tracks` atomically, so the UI sees the cached library
     // continuously and then jumps to the fresh one in a single update.
     private var scanBuffer: [Track] = []
+
+    // Mirrors the desktop scanner's filter (Constants::supportedExtensions).
+    // Used by the pre-count pass to set expectedCount before the scanner
+    // itself reports tracks one-by-one.
+    private static let audioExtensions: Set<String> = [
+        "mp3", "flac", "wav", "aiff", "aif", "m4a", "aac", "alac", "ogg", "opus"
+    ]
 
     deinit
     {
@@ -32,7 +41,26 @@ final class LibraryStore: ObservableObject
         }
         tracks.removeAll()
         scanBuffer.removeAll()
-        isScanning = true
+        scannedCount  = 0
+        expectedCount = 0
+        isScanning    = true
+
+        // Pre-count audio files in parallel so the scanning progress bar can
+        // become determinate quickly. The actual scan (which reads metadata)
+        // runs orders of magnitude slower than this enumeration pass.
+        for path in folders
+        {
+            let folderURL = URL(fileURLWithPath: path)
+            DispatchQueue.global(qos: .userInitiated).async
+            { [weak self] in
+                let n = LibraryStore.countAudioFiles(at: folderURL)
+                DispatchQueue.main.async
+                { [weak self] in
+                    guard let self = self, self.isScanning else { return }
+                    self.expectedCount += n
+                }
+            }
+        }
 
         let owned: [UnsafeMutablePointer<CChar>?] = folders.map { strdup($0) }
         defer { owned.forEach { if let p = $0 { free(p) } } }
@@ -66,15 +94,50 @@ final class LibraryStore: ObservableObject
     fileprivate func appendScannedTrack(_ track: Track)
     {
         scanBuffer.append(track)
+        scannedCount += 1
     }
 
     fileprivate func scanCompleted()
     {
         // Atomic swap: replace the (possibly stale) cached library with the
         // fresh scan results. Single SwiftUI invalidation.
-        tracks     = scanBuffer
-        scanBuffer = []
-        isScanning = false
+        tracks        = scanBuffer
+        scanBuffer    = []
+        isScanning    = false
+        scannedCount  = 0
+        expectedCount = 0
+    }
+
+    private static func countAudioFiles(at root: URL) -> Int
+    {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: root,
+                                              includingPropertiesForKeys: nil,
+                                              options: [])
+        else { return 0 }
+
+        var count = 0
+        let rootPath = root.standardizedFileURL.path
+        for case let url as URL in enumerator
+        {
+            // Match the desktop scanner's "skip any path component starting
+            // with `.`" rule (this is what hides .styl sidecars and any
+            // `.hidden` folders).
+            var cur = url.standardizedFileURL
+            var hidden = false
+            while cur.path != rootPath
+            {
+                if cur.lastPathComponent.hasPrefix(".") { hidden = true; break }
+                cur = cur.deletingLastPathComponent()
+            }
+            if hidden { continue }
+
+            if audioExtensions.contains(url.pathExtension.lowercased())
+            {
+                count += 1
+            }
+        }
+        return count
     }
 }
 

@@ -124,7 +124,23 @@ struct LibraryListView: View
     {
         if library.isScanning
         {
-            ProgressView("Scanning…")
+            VStack(spacing: 12)
+            {
+                ProgressView()
+                Text("Scanning…")
+                if library.expectedCount > 0
+                {
+                    ProgressView(value: Double(library.scannedCount),
+                                 total: Double(library.expectedCount))
+                        .progressViewStyle(.linear)
+                        .tint(.green)
+                        .frame(width: 240)
+                    Text("\(library.scannedCount) / \(library.expectedCount)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding()
         }
         else
         {

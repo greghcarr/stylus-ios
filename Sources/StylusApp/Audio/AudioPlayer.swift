@@ -10,8 +10,11 @@ final class AudioPlayer: NSObject, ObservableObject
     override init()
     {
         super.init()
+        // .playback alone already routes through AirPlay and Bluetooth A2DP on
+        // iOS 17+; passing those flags explicitly logs an internal -50
+        // paramErr from SessionCore. Keep the call minimal.
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
+        try? session.setCategory(.playback)
         try? session.setActive(true)
     }
 
