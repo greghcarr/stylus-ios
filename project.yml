@@ -127,9 +127,25 @@ targets:
 
           cd "${STYLUS_SRCROOT}"
 
-          # Always run configure - it's incremental on re-runs, and skipping
-          # it leaves us broken when a previous configure aborted mid-flight
-          # (CMakeCache.txt exists but the generated .xcodeproj doesn't).
+          # Fast-path: if libStylusCore.a is up to date relative to every
+          # source under the cmake target's footprint, skip cmake entirely.
+          # Cuts ~5 s off iterations that don't touch the bridge or the C++
+          # core (most Swift-only edits).
+          STYLUS_LIB="${STYLUS_BUILD_DIR}/${STYLUS_CONFIG}-${STYLUS_PLATFORM}/libStylusCore.a"
+          STYLUS_PROJ="${STYLUS_BUILD_DIR}/StylusIOS.xcodeproj/project.pbxproj"
+          if [ -f "${STYLUS_LIB}" ] && [ -f "${STYLUS_PROJ}" ]; then
+            NEWER_SOURCES=$(find Sources/StylusBridge External/stylus/src CMakeLists.txt \
+                                 -type f -newer "${STYLUS_LIB}" 2>/dev/null | head -1)
+            if [ -z "${NEWER_SOURCES}" ]; then
+              echo "StylusCore up to date; skipping cmake."
+              exit 0
+            fi
+          fi
+
+          # Slow-path: re-configure + re-build. Always run configure here
+          # because skipping it leaves us broken when a previous configure
+          # aborted mid-flight (CMakeCache.txt exists but the generated
+          # .xcodeproj doesn't).
           # CMAKE_XCODE_ATTRIBUTE_CODE_SIGN* flags disable signing on every
           # target in the inner Xcode project: static libs don't need
           # signing, and JUCE's juceaide host tool would otherwise ask for
