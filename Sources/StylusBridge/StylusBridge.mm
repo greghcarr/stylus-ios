@@ -1,6 +1,7 @@
 #include "StylusBridge.h"
 
 #include "library/LibraryScanner.h"
+#include "library/LibraryCache.h"
 #include "audio/StylFile.h"
 #include "audio/TrackInfo.h"
 
@@ -63,9 +64,27 @@ struct TrackBytes
 // namespace scope so the tag name matches across the C / C++ boundary.
 struct StylusLibrary
 {
-    std::vector<juce::File> folders;
-    Stylus::LibraryScanner  scanner;
+    std::vector<juce::File>        folders;
+    Stylus::LibraryScanner         scanner;
+    std::vector<Stylus::TrackInfo> scanBuffer;   // accumulates tracks during
+                                                 // the current scan so we can
+                                                 // write the cache on done
 };
+
+namespace
+{
+
+bool foldersMatch (const std::vector<juce::File>& a,
+                   const std::vector<juce::File>& b)
+{
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (a[i].getFullPathName() != b[i].getFullPathName())
+            return false;
+    return true;
+}
+
+} // namespace
 
 extern "C" {
 
@@ -101,6 +120,33 @@ void Stylus_LibraryDestroy (StylusLibraryHandle handle)
     delete h;
 }
 
+int32_t Stylus_LibraryLoadCache (StylusLibraryHandle handle,
+                                 Stylus_OnTrackFn onTrack,
+                                 void* userData)
+{
+    auto* h = handle;
+    if (h == nullptr || onTrack == nullptr) return 0;
+
+    std::vector<Stylus::TrackInfo> tracks;
+    std::vector<juce::File>        cachedMusicFolders;
+    std::vector<juce::File>        cachedPodcastFolders;
+    if (! Stylus::LibraryCache::tryLoad (tracks, cachedMusicFolders, cachedPodcastFolders))
+        return 0;
+
+    if (! foldersMatch (cachedMusicFolders, h->folders))
+        return 0;
+
+    int32_t count = 0;
+    for (auto& t : tracks)
+    {
+        TrackBytes tb (std::move (t));
+        const StylusTrackC c = tb.asC();
+        onTrack (&c, userData);
+        ++count;
+    }
+    return count;
+}
+
 void Stylus_LibraryStartScan (StylusLibraryHandle handle,
                               Stylus_OnTrackFn onTrack,
                               Stylus_OnScanDoneFn onDone,
@@ -109,19 +155,28 @@ void Stylus_LibraryStartScan (StylusLibraryHandle handle,
     auto* h = handle;
     if (h == nullptr) return;
 
-    h->scanner.onBatchReady = [onTrack, userData] (std::vector<Stylus::TrackInfo> batch)
+    h->scanBuffer.clear();
+
+    h->scanner.onBatchReady = [h, onTrack, userData] (std::vector<Stylus::TrackInfo> batch)
     {
-        if (onTrack == nullptr) return;
         for (auto& t : batch)
         {
-            TrackBytes tb (std::move (t));
-            const StylusTrackC c = tb.asC();
-            onTrack (&c, userData);
+            // Keep a copy in the bridge buffer for the cache write at scan
+            // end, AND fire the per-track callback for the caller's UI.
+            h->scanBuffer.push_back (t);
+            if (onTrack != nullptr)
+            {
+                TrackBytes tb (std::move (t));
+                const StylusTrackC c = tb.asC();
+                onTrack (&c, userData);
+            }
         }
     };
 
-    h->scanner.onScanComplete = [onDone, userData] (int total)
+    h->scanner.onScanComplete = [h, onDone, userData] (int total)
     {
+        Stylus::LibraryCache::save (h->scanBuffer, h->folders, /*podcastFolders*/ {});
+        h->scanBuffer.clear();
         if (onDone != nullptr) onDone (total, userData);
     };
 

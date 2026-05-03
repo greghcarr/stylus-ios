@@ -52,8 +52,25 @@ void Stylus_LibraryDestroy(StylusLibraryHandle handle);
 typedef void (*Stylus_OnTrackFn)(const StylusTrackC* track, void* userData);
 typedef void (*Stylus_OnScanDoneFn)(int32_t totalTracksFound, void* userData);
 
+// Loads cached library entries from disk if a cache file exists for the
+// handle's folder set. Fires onTrack synchronously once per cached track on
+// the calling thread (expected to be the main thread). Returns the number
+// of tracks loaded; 0 indicates a cache miss (no file, mismatched folder
+// set, or parse error) and the caller should fall back to a fresh scan.
+//
+// Intended call pattern:
+//     Stylus_LibraryLoadCache(...);   // instant repopulate from disk
+//     Stylus_LibraryStartScan(...);   // background fresh scan, atomically
+//                                     // replaces the in-memory library
+//                                     // when complete and rewrites cache
+int32_t Stylus_LibraryLoadCache(StylusLibraryHandle handle,
+                                Stylus_OnTrackFn onTrack,
+                                void* userData);
+
 // Starts a background scan. onTrack fires once per discovered track on the
 // main thread; onDone fires once on the main thread when the scan completes.
+// Scanned tracks are also written to the disk cache so the next launch can
+// repopulate via Stylus_LibraryLoadCache.
 void Stylus_LibraryStartScan(StylusLibraryHandle handle,
                              Stylus_OnTrackFn onTrack,
                              Stylus_OnScanDoneFn onDone,
