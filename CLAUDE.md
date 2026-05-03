@@ -162,6 +162,18 @@ host bootstrap needs the macOS SDK; without sanitisation it fails compiler
 detection. The script also restores `DEVELOPER_DIR` from `xcode-select -p`
 so the tools are still findable.
 
+### CMake script-phase fast path
+The same script in [project.yml](project.yml) does an mtime-based freshness
+check before calling CMake: if `libStylusCore.a` exists and no input under
+`Sources/StylusBridge/`, `External/stylus/src/`, or `CMakeLists.txt` is
+newer than the lib, it `exit 0`s before invoking cmake at all. This drops
+a no-op script-phase invocation from ~6 s to ~1.3 s and is the difference
+between "5-10 s ⌘R" and "10-20 s ⌘R" for Swift-only iterations.
+
+If you change CMake-side build options (e.g. add a new source to the cmake
+target's source list, or change `-DCMAKE_*` flags), `make clean` once to
+force the slow path; the fast path doesn't watch project-config files.
+
 ### Submodule update workflow
 The desktop submodule is pinned to a specific commit. It does not auto-update.
 Bump the pin only when iOS work needs new desktop changes:
@@ -186,6 +198,22 @@ so regressions are easy to attribute via `git bisect`.
 - The CMake target generates the inner `StylusIOS.xcodeproj` but that's a
   build artifact. The user-facing project is `StylusApp.xcodeproj` which is
   XcodeGen-driven.
+
+## Doc maintenance (mandatory)
+Update **this file and [README.md](README.md)** whenever a change touches:
+
+- Build flow, script-phase logic, [project.yml](project.yml), [CMakeLists.txt](CMakeLists.txt),
+  or the [Makefile](Makefile).
+- The bridge ABI ([Sources/StylusBridge/StylusBridge.h](Sources/StylusBridge/StylusBridge.h))
+  or how Swift calls into it.
+- Architecture ownership / threading / state shape (e.g. who owns the
+  security scope, who owns the cache, how the scanner is driven).
+- Conventions, tooling, or the developer workflow.
+- Roadmap status (mark phases done in the README; add new phase notes here).
+
+Same commit as the change; never a separate "update docs" follow-up.
+The bar for inclusion is "future-Greg or future-Claude would have to read
+the diff to understand this." If yes, document it.
 
 ## Adding a new bridge function checklist
 1. Add the C declaration to `Sources/StylusBridge/StylusBridge.h` inside
