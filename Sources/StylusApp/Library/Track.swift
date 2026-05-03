@@ -31,7 +31,7 @@ extension Track
 
     var subtitle: String
     {
-        [artist, album].filter { !$0.isEmpty }.joined(separator: " — ")
+        [artist, album].filter { !$0.isEmpty }.joined(separator: " - ")
     }
 
     var formattedDuration: String
