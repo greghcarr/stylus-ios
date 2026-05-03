@@ -1,0 +1,146 @@
+name: StylusApp
+options:
+  bundleIdPrefix: com.greghcarr
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    DEVELOPMENT_TEAM: "FYG4RYK747"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    ENABLE_MODULE_VERIFIER: NO
+
+targets:
+  StylusApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Sources/StylusApp
+        excludes:
+          - Resources/Info.plist
+    info:
+      path: Sources/StylusApp/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Stylus
+        CFBundleShortVersionString: 0.1.0
+        LSRequiresIPhoneOS: true
+        LSSupportsOpeningDocumentsInPlace: true
+        # Bootstraps the "On My iPhone" surface in the Files app so the user
+        # can create a neutral local folder there. Stylus's own Documents
+        # folder stays empty (music lives outside the sandbox via the picker);
+        # exposing it is purely so On My iPhone becomes visible.
+        UIFileSharingEnabled: true
+        UIApplicationSupportsIndirectInputEvents: true
+        UIBackgroundModes:
+          - audio
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        "UISupportedInterfaceOrientations~ipad":
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.greghcarr.stylus.ios
+        PRODUCT_NAME: Stylus
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/StylusBridge/StylusBridge.h
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Sources/StylusBridge
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -ObjC
+          - -lStylusCore
+          - -lc++
+        LIBRARY_SEARCH_PATHS[sdk=iphoneos*]:
+          - $(inherited)
+          - $(SRCROOT)/build-ios-device/$(CONFIGURATION)-iphoneos
+        LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]:
+          - $(inherited)
+          - $(SRCROOT)/build-ios-sim/$(CONFIGURATION)-iphonesimulator
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOL_EXTENSIONS: YES
+    dependencies:
+      - sdk: AVFoundation.framework
+      - sdk: AudioToolbox.framework
+      - sdk: Accelerate.framework
+      - sdk: QuartzCore.framework
+      - sdk: Foundation.framework
+      - sdk: UIKit.framework
+    preBuildScripts:
+      - name: Build StylusCore via CMake
+        basedOnDependencyAnalysis: false
+        runOnlyWhenInstalling: false
+        shell: /bin/bash
+        script: |
+          set -euo pipefail
+
+          # Capture only the few Xcode-provided variables we actually use,
+          # then run cmake with `env -i` so none of Xcode's other
+          # toolchain / SDK env vars (SDKROOT, TOOLCHAINS, SDK_DIR,
+          # *_DEPLOYMENT_TARGET, ...) leak into the recursive cmake call
+          # JUCE makes to bootstrap juceaide for the host. juceaide is a
+          # macOS host tool; if it sees SDKROOT=iphoneos it tries to build
+          # itself against the iOS SDK and host-compiler detection fails.
+          STYLUS_SRCROOT="${SRCROOT}"
+          STYLUS_PLATFORM="${PLATFORM_NAME}"
+          STYLUS_CONFIG="${CONFIGURATION}"
+          STYLUS_DEVELOPER_DIR="$(xcode-select -p)"
+
+          case "${STYLUS_PLATFORM}" in
+            iphoneos)        STYLUS_BUILD_DIR="build-ios-device" ;;
+            iphonesimulator) STYLUS_BUILD_DIR="build-ios-sim"    ;;
+            *)               echo "Unsupported PLATFORM_NAME: ${STYLUS_PLATFORM}" >&2; exit 1 ;;
+          esac
+
+          run_cmake() {
+            env -i \
+              HOME="${HOME}" \
+              USER="${USER}" \
+              PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" \
+              DEVELOPER_DIR="${STYLUS_DEVELOPER_DIR}" \
+              "$@"
+          }
+
+          if ! command -v cmake >/dev/null 2>&1 \
+              && [ ! -x /opt/homebrew/bin/cmake ] \
+              && [ ! -x /usr/local/bin/cmake ]; then
+            echo "error: cmake not found - install with: brew install cmake" >&2
+            exit 1
+          fi
+
+          cd "${STYLUS_SRCROOT}"
+
+          # Always run configure - it's incremental on re-runs, and skipping
+          # it leaves us broken when a previous configure aborted mid-flight
+          # (CMakeCache.txt exists but the generated .xcodeproj doesn't).
+          # CMAKE_XCODE_ATTRIBUTE_CODE_SIGN* flags disable signing on every
+          # target in the inner Xcode project: static libs don't need
+          # signing, and JUCE's juceaide host tool would otherwise ask for
+          # an iOS provisioning profile when built under the iOS context.
+          run_cmake cmake -B "${STYLUS_BUILD_DIR}" -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT="${STYLUS_PLATFORM}" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=""
+
+          run_cmake cmake --build "${STYLUS_BUILD_DIR}" --config "${STYLUS_CONFIG}"

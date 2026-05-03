@@ -31,11 +31,17 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(JUCE)
 
 set(STYLUS_DIR "${CMAKE_SOURCE_DIR}/External/stylus")
+set(BRIDGE_DIR "${CMAKE_SOURCE_DIR}/Sources/StylusBridge")
 
-# StylusCore: same library as the desktop project, built for iOS.
-# Source list mirrors the desktop CMakeLists' StylusCore target. AlbumArtExtractor
-# ships only as the .mm file; the juce::Image-returning .cpp wrapper stays in
-# the desktop GUI target since juce::Image lives in juce_graphics.
+# StylusCore: same library as the desktop project, built for iOS, plus the
+# Objective-C++ bridge that exposes a Swift-callable C facade. Source list for
+# the C++ core mirrors the desktop CMakeLists' StylusCore target.
+# AlbumArtExtractor ships only as the .mm file; the juce::Image-returning .cpp
+# wrapper stays in the desktop GUI target since juce::Image lives in juce_graphics.
+# The bridge .mm file lives here rather than in its own static library because
+# JUCE's CMake modules attach their sources via INTERFACE properties, so two
+# static libs that both link juce::* would each compile a copy of every JUCE
+# .cpp file and produce duplicate symbols at app link time.
 add_library(StylusCore STATIC
     ${STYLUS_DIR}/src/audio/PlayQueue.cpp
     ${STYLUS_DIR}/src/audio/StylFile.cpp
@@ -47,13 +53,18 @@ add_library(StylusCore STATIC
     ${STYLUS_DIR}/src/library/LibraryScanner.cpp
     ${STYLUS_DIR}/src/library/LibraryCache.cpp
     ${STYLUS_DIR}/src/library/PlaylistStore.cpp
+    ${BRIDGE_DIR}/StylusBridge.mm
 )
 
-target_include_directories(StylusCore PUBLIC ${STYLUS_DIR}/src)
+target_include_directories(StylusCore PUBLIC
+    ${STYLUS_DIR}/src
+    ${BRIDGE_DIR}
+)
 
 target_link_libraries(StylusCore
     PUBLIC
         juce::juce_core
+        juce::juce_events
         juce::juce_data_structures
         juce::juce_audio_basics
         juce::juce_audio_formats

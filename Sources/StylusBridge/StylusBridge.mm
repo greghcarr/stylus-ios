@@ -1,0 +1,146 @@
+#include "StylusBridge.h"
+
+#include "library/LibraryScanner.h"
+#include "audio/StylFile.h"
+#include "audio/TrackInfo.h"
+
+#include <juce_events/juce_events.h>
+#include <juce_core/juce_core.h>
+
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+namespace
+{
+
+// Holds UTF-8 byte storage alongside a TrackInfo so the const char* fields
+// inside a StylusTrackC stay valid for the lifetime of this owner.
+struct TrackBytes
+{
+    Stylus::TrackInfo info;
+    std::string filePath, title, artist, album, genre, year, musicalKey, podcast;
+
+    explicit TrackBytes (Stylus::TrackInfo t)
+        : info (std::move (t))
+    {
+        filePath   = info.file.getFullPathName().toStdString();
+        title      = info.title.toStdString();
+        artist     = info.artist.toStdString();
+        album      = info.album.toStdString();
+        genre      = info.genre.toStdString();
+        year       = info.year.toStdString();
+        musicalKey = info.musicalKey.toStdString();
+        podcast    = info.podcast.toStdString();
+    }
+
+    StylusTrackC asC() const noexcept
+    {
+        StylusTrackC c{};
+        c.filePath        = filePath.c_str();
+        c.title           = title.c_str();
+        c.artist          = artist.c_str();
+        c.album           = album.c_str();
+        c.genre           = genre.c_str();
+        c.year            = year.c_str();
+        c.trackNumber     = info.trackNumber;
+        c.durationSeconds = info.durationSecs;
+        c.bpm             = info.bpm;
+        c.musicalKey      = musicalKey.c_str();
+        c.lufs            = static_cast<double> (info.lufs);
+        c.isPodcast       = info.isPodcast ? 1 : 0;
+        c.podcast         = podcast.c_str();
+        c.dateAddedMillis = info.dateAdded;
+        c.playCount       = info.playCount;
+        return c;
+    }
+};
+
+} // namespace
+
+// Definition of the opaque struct forward-declared in StylusBridge.h. Lives at
+// namespace scope so the tag name matches across the C / C++ boundary.
+struct StylusLibrary
+{
+    std::vector<juce::File> folders;
+    Stylus::LibraryScanner  scanner;
+};
+
+extern "C" {
+
+void Stylus_Initialize (void)
+{
+    static std::once_flag flag;
+    std::call_once (flag, []() { juce::initialiseJuce_GUI(); });
+}
+
+StylusLibraryHandle Stylus_LibraryCreate (const char* const* musicFolders,
+                                          int32_t folderCount)
+{
+    auto* h = new (std::nothrow) StylusLibrary();
+    if (h == nullptr) return nullptr;
+
+    if (musicFolders != nullptr && folderCount > 0)
+    {
+        h->folders.reserve (static_cast<size_t> (folderCount));
+        for (int32_t i = 0; i < folderCount; ++i)
+        {
+            if (musicFolders[i] == nullptr) continue;
+            h->folders.emplace_back (juce::String (juce::CharPointer_UTF8 (musicFolders[i])));
+        }
+    }
+    return h;
+}
+
+void Stylus_LibraryDestroy (StylusLibraryHandle handle)
+{
+    auto* h = handle;
+    if (h == nullptr) return;
+    h->scanner.cancelScan();
+    delete h;
+}
+
+void Stylus_LibraryStartScan (StylusLibraryHandle handle,
+                              Stylus_OnTrackFn onTrack,
+                              Stylus_OnScanDoneFn onDone,
+                              void* userData)
+{
+    auto* h = handle;
+    if (h == nullptr) return;
+
+    h->scanner.onBatchReady = [onTrack, userData] (std::vector<Stylus::TrackInfo> batch)
+    {
+        if (onTrack == nullptr) return;
+        for (auto& t : batch)
+        {
+            TrackBytes tb (std::move (t));
+            const StylusTrackC c = tb.asC();
+            onTrack (&c, userData);
+        }
+    };
+
+    h->scanner.onScanComplete = [onDone, userData] (int total)
+    {
+        if (onDone != nullptr) onDone (total, userData);
+    };
+
+    h->scanner.scanFolders (h->folders, /*podcastFolders*/ {});
+}
+
+int32_t Stylus_StylLoad (const char* trackPath, StylusTrackC* outTrack)
+{
+    if (trackPath == nullptr || outTrack == nullptr) return 0;
+
+    static thread_local std::unique_ptr<TrackBytes> storage;
+
+    Stylus::TrackInfo info;
+    info.file = juce::File (juce::String (juce::CharPointer_UTF8 (trackPath)));
+    const bool existed = Stylus::StylFile::load (info);
+
+    storage = std::make_unique<TrackBytes> (std::move (info));
+    *outTrack = storage->asC();
+    return existed ? 1 : 0;
+}
+
+} // extern "C"

@@ -3,6 +3,9 @@ build/
 build-*/
 DerivedData/
 
+# XcodeGen-generated project (regenerate with `xcodegen generate`)
+StylusApp.xcodeproj/
+
 # Xcode
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
