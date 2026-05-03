@@ -198,4 +198,21 @@ int32_t Stylus_StylLoad (const char* trackPath, StylusTrackC* outTrack)
     return existed ? 1 : 0;
 }
 
+// Forward-declared so we don't have to depend on AlbumArtExtractor's internal
+// header (it doesn't ship one - the function is a pure-ObjC++ extern "C" in
+// AlbumArtExtractor.mm so the .cpp wrapper can stay JUCE-only on the desktop).
+unsigned char* Stylus_extractEmbeddedArtwork (const char* utf8Path, size_t* outSize);
+
+unsigned char* Stylus_ExtractArtwork (const char* trackPath, size_t* outSize)
+{
+    if (outSize != nullptr) *outSize = 0;
+    if (trackPath == nullptr || outSize == nullptr) return nullptr;
+    return Stylus_extractEmbeddedArtwork (trackPath, outSize);
+}
+
+void Stylus_FreeArtworkBytes (unsigned char* bytes)
+{
+    std::free (bytes);
+}
+
 } // extern "C"

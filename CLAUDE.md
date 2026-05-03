@@ -14,7 +14,9 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
 - Phase 1.5 (folder picker + security-scoped bookmark): done.
 - Phase 1.6 (`LibraryCache` bridged for instant launches): done.
 - Phase 1.7 (per-file scanner timeout, smaller batch size): done.
-- Phase 2+ (album art, transport / queue, sidebar, analysis, Apple Music
+- Phase 2 (album art + full `.styl` metadata in row): done. Track row shows
+  thumbnail + bpm + musical key alongside title/artist/album/duration.
+- Phase 3+ (transport / queue / Now Playing, sidebar, analysis, Apple Music
   lookup, playlists, polish): pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 
 ## Build
@@ -59,6 +61,9 @@ stylus-ios/
                               cache-then-scan flow, scan progress counters.
         MusicFolderStore.swift Holds the user-picked music folder URL,
                               persists it as a security-scoped bookmark.
+        ArtworkCache.swift    NSCache of decoded UIImage keyed by file path,
+                              plus an async loadArtwork(for:) helper that
+                              calls Stylus_ExtractArtwork off the main thread.
       UI/LibraryListView.swift NavigationStack with three states: pick-folder,
                               scanning-with-progress-bar, populated list.
       Resources/
@@ -132,6 +137,28 @@ Two-step on every launch:
    next launch reads back the freshest snapshot.
 The cache key is implicit (folder set match); changing the picked folder
 discards the previous cache.
+
+### Album art loading
+[Sources/StylusApp/Library/ArtworkCache.swift](Sources/StylusApp/Library/ArtworkCache.swift)
+exposes a `MainActor`-isolated `ArtworkCache` (singleton, `NSCache` of
+`UIImage` keyed by track file path, count limit 200) plus a free async
+`loadArtwork(for:)` that decodes off the main thread on cache miss. The
+bridge functions `Stylus_ExtractArtwork` / `Stylus_FreeArtworkBytes`
+return malloc'd JPEG / PNG bytes via the desktop's
+[AlbumArtExtractor.mm](External/stylus/src/audio/AlbumArtExtractor.mm)
+(AVFoundation `commonMetadata` query). Each `TrackRow` runs its own
+`.task(id: filePath) { artwork = await loadArtwork(for: filePath) }`,
+which is fine because SwiftUI's `List` virtualises and only visible rows
+fire their task. Cache hits short-circuit the detached work entirely so
+scrolling back is instant.
+
+`Stylus_ExtractArtwork` is a thin wrapper around the existing desktop
+`Stylus_extractEmbeddedArtwork`. We forward-declare that function in
+[StylusBridge.mm](Sources/StylusBridge/StylusBridge.mm) rather than
+include a header, because the desktop intentionally leaves
+`AlbumArtExtractor.mm` JUCE-free so the .mm and the JUCE-flavoured .cpp
+wrapper can coexist without translation-unit conflicts (the JUCE Carbon
+`Point` / `Component` types collide with AVFoundation's).
 
 ### Per-file scanner timeout
 `LibraryScanner::buildTrackInfoWithTimeout` runs `buildTrackInfo` on a

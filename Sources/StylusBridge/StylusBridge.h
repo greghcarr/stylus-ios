@@ -85,6 +85,17 @@ void Stylus_LibraryStartScan(StylusLibraryHandle handle,
 // Stylus_StylLoad on the same thread.
 int32_t Stylus_StylLoad(const char* trackPath, StylusTrackC* outTrack);
 
+// --- Album artwork ---
+
+// Extracts embedded artwork bytes (JPEG or PNG) from the audio file at the
+// given UTF-8 path. Returns a malloc'd buffer the caller must release via
+// Stylus_FreeArtworkBytes. Returns NULL and sets *outSize = 0 if the file
+// has no embedded artwork or it can't be read.
+unsigned char* Stylus_ExtractArtwork(const char* trackPath, size_t* outSize);
+
+// Releases a buffer returned by Stylus_ExtractArtwork. NULL is a no-op.
+void Stylus_FreeArtworkBytes(unsigned char* bytes);
+
 #ifdef __cplusplus
 }
 #endif

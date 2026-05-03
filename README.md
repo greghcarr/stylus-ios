@@ -124,7 +124,8 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
 - [x] **Phase 1.6** `LibraryCache` bridged for instant launches
 - [x] **Phase 1.7** Per-file 15s scanner timeout, smaller batch size for
       smoother progress reporting
-- [ ] **Phase 2** Full `.styl` metadata + album art
+- [x] **Phase 2** Full `.styl` metadata + album art (thumbnail in track row,
+      bpm + key alongside duration)
 - [ ] **Phase 3** Transport, queue, Now Playing, lock screen
 - [ ] **Phase 4** Sidebar views (Artists / Albums / Playlists / Search)
 - [ ] **Phase 5** Background analysis (BPM / key)
