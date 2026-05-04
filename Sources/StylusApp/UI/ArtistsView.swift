@@ -6,19 +6,23 @@ struct ArtistsView: View
 
     var body: some View
     {
-        List(artistRows, id: \.name)
-        { row in
-            NavigationLink(value: row.name)
-            {
-                HStack
+        List
+        {
+            ForEach(artistRows, id: \.name)
+            { row in
+                NavigationLink(value: row.name)
                 {
-                    Text(row.name)
-                    Spacer()
-                    Text("\(row.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                    HStack
+                    {
+                        Text(row.name)
+                        Spacer()
+                        Text("\(row.count)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
+            TransportBarBottomSpacer()
         }
         .listStyle(.plain)
         .navigationTitle("Artists")
@@ -64,9 +68,13 @@ struct ArtistDetailView: View
 
     var body: some View
     {
-        List(tracks)
-        { track in
-            TrackRowButton(track: track, visibleTracks: tracks)
+        List
+        {
+            ForEach(tracks)
+            { track in
+                TrackRowButton(track: track, visibleTracks: tracks)
+            }
+            TransportBarBottomSpacer()
         }
         .listStyle(.plain)
         .navigationTitle(artist)

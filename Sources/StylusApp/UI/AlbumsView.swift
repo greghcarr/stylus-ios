@@ -17,13 +17,17 @@ struct AlbumsView: View
 
     var body: some View
     {
-        List(albums)
-        { key in
-            NavigationLink(value: key)
-            {
-                AlbumRow(key: key,
-                         representativePath: representativePath(for: key))
+        List
+        {
+            ForEach(albums)
+            { key in
+                NavigationLink(value: key)
+                {
+                    AlbumRow(key: key,
+                             representativePath: representativePath(for: key))
+                }
             }
+            TransportBarBottomSpacer()
         }
         .listStyle(.plain)
         .navigationTitle("Albums")
@@ -133,9 +137,13 @@ struct AlbumDetailView: View
 
     var body: some View
     {
-        List(tracks)
-        { track in
-            TrackRowButton(track: track, visibleTracks: tracks)
+        List
+        {
+            ForEach(tracks)
+            { track in
+                TrackRowButton(track: track, visibleTracks: tracks)
+            }
+            TransportBarBottomSpacer()
         }
         .listStyle(.plain)
         .navigationTitle(key.album)

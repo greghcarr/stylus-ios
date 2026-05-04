@@ -141,9 +141,13 @@ struct LibraryListView: View
 
     private var trackList: some View
     {
-        List(library.tracks)
-        { track in
-            TrackRowButton(track: track, visibleTracks: library.tracks)
+        List
+        {
+            ForEach(library.tracks)
+            { track in
+                TrackRowButton(track: track, visibleTracks: library.tracks)
+            }
+            TransportBarBottomSpacer()
         }
         .listStyle(.plain)
     }

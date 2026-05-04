@@ -55,7 +55,7 @@ struct TransportBar: View
                 Button { audio.playNext() }
                 label:
                 {
-                    Image(systemName: "forward.fill")
+                    Image(systemName: "forward.end.fill")
                         .font(.title3)
                         .frame(width: 36, height: 36)
                         .opacity(queue.canAdvance ? 1.0 : 0.35)
@@ -66,11 +66,22 @@ struct TransportBar: View
             .padding(.horizontal, 12)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
-            .background(.regularMaterial)
-            .overlay(alignment: .top)
-            {
-                Divider()
-            }
+            // Curve the top corners so the bar visually nests into the
+            // iPhone's screen bottom curve. Bottom corners stay square so
+            // the bar tucks flush against the system tab bar above the
+            // safe area.
+            .background(
+                UnevenRoundedRectangle(
+                    cornerRadii: RectangleCornerRadii(
+                        topLeading:     24,
+                        bottomLeading:   0,
+                        bottomTrailing:  0,
+                        topTrailing:    24
+                    ),
+                    style: .continuous
+                )
+                .fill(.regularMaterial)
+            )
             .task(id: track.filePath)
             {
                 artwork = await loadArtwork(for: track.filePath)

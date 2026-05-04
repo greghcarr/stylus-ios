@@ -8,9 +8,13 @@ struct SearchView: View
 
     var body: some View
     {
-        List(matches)
-        { track in
-            TrackRowButton(track: track, visibleTracks: matches)
+        List
+        {
+            ForEach(matches)
+            { track in
+                TrackRowButton(track: track, visibleTracks: matches)
+            }
+            TransportBarBottomSpacer()
         }
         .listStyle(.plain)
         .navigationTitle("Search")

@@ -144,24 +144,30 @@ struct NowPlayingSheet: View
             Button { audio.playPrev() }
             label:
             {
-                Image(systemName: "backward.fill")
+                Image(systemName: "backward.end.fill")
                     .font(.system(size: 32))
+                    .frame(width: 48, height: 48)
             }
             .buttonStyle(.plain)
 
             Button { audio.togglePlayPause() }
             label:
             {
+                // Fixed frame keeps the surrounding skip / back buttons
+                // from shifting horizontally when the icon swaps between
+                // play.fill and pause.fill (different glyph widths).
                 Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 56))
+                    .frame(width: 64, height: 64)
             }
             .buttonStyle(.plain)
 
             Button { audio.playNext() }
             label:
             {
-                Image(systemName: "forward.fill")
+                Image(systemName: "forward.end.fill")
                     .font(.system(size: 32))
+                    .frame(width: 48, height: 48)
                     .opacity(queue.canAdvance ? 1.0 : 0.35)
             }
             .buttonStyle(.plain)
