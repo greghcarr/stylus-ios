@@ -3,6 +3,10 @@ import SwiftUI
 // Bottom-edge transport strip pinned above the system tab bar (or above the
 // safe-area inset on a tabless layout). Hidden when nothing is loaded; shows
 // thumbnail + title/artist + play/pause + skip when a track is current.
+//
+// Fades in over 1 s when a track first loads (when audio.currentTrack flips
+// from nil to non-nil). Track-to-track changes don't re-fade since the bar
+// stays current throughout.
 struct TransportBar: View
 {
     @EnvironmentObject var audio: AudioPlayer
@@ -15,80 +19,92 @@ struct TransportBar: View
 
     var body: some View
     {
-        if let track = audio.currentTrack
+        Group
         {
-            HStack(spacing: 12)
+            if let track = audio.currentTrack
             {
-                Button { onTap() }
-                label:
-                {
-                    HStack(spacing: 12)
-                    {
-                        artworkView
-                        VStack(alignment: .leading, spacing: 1)
-                        {
-                            Text(track.displayTitle)
-                                .font(.body)
-                                .lineLimit(1)
-                            if !track.subtitle.isEmpty
-                            {
-                                Text(track.subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                barContent(track)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 1), value: audio.currentTrack != nil)
+    }
 
-                Button { audio.togglePlayPause() }
-                label:
-                {
-                    Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title2)
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.plain)
-                Button { audio.playNext() }
-                label:
-                {
-                    Image(systemName: "forward.end.fill")
-                        .font(.title3)
-                        .frame(width: 36, height: 36)
-                        .opacity(queue.canAdvance ? 1.0 : 0.35)
-                }
-                .buttonStyle(.plain)
-                .disabled(!queue.canAdvance)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 14)
-            .frame(maxWidth: .infinity)
-            // Curve the top corners so the bar visually nests into the
-            // iPhone's screen bottom curve. Material extends past the
-            // bar's frame into the bottom safe area (where the system tab
-            // bar lives) so the two read as a single continuous frosted
-            // surface.
-            .background(alignment: .top)
+    @ViewBuilder
+    private func barContent(_ track: Track) -> some View
+    {
+        HStack(spacing: 12)
+        {
+            Button { onTap() }
+            label:
             {
-                UnevenRoundedRectangle(
-                    cornerRadii: RectangleCornerRadii(
-                        topLeading:     24,
-                        bottomLeading:   0,
-                        bottomTrailing:  0,
-                        topTrailing:    24
-                    ),
-                    style: .continuous
-                )
-                .fill(.regularMaterial)
-                .ignoresSafeArea(edges: .bottom)
+                HStack(spacing: 12)
+                {
+                    artworkView
+                    VStack(alignment: .leading, spacing: 1)
+                    {
+                        Text(track.displayTitle)
+                            .font(.body)
+                            .lineLimit(1)
+                        if !track.subtitle.isEmpty
+                        {
+                            Text(track.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
-            .task(id: track.filePath)
+            .buttonStyle(.plain)
+
+            Button { audio.togglePlayPause() }
+            label:
             {
-                artwork = await loadArtwork(for: track.filePath)
+                Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.title2)
+                    .frame(width: 36, height: 36)
             }
+            .buttonStyle(.plain)
+
+            Button { audio.playNext() }
+            label:
+            {
+                Image(systemName: "forward.end.fill")
+                    .font(.title3)
+                    .frame(width: 36, height: 36)
+                    .opacity(queue.canAdvance ? 1.0 : 0.35)
+            }
+            .buttonStyle(.plain)
+            .disabled(!queue.canAdvance)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
+        // Curve the top corners so the bar visually nests into the
+        // iPhone's screen bottom curve. Material extends past the
+        // bar's frame into the bottom safe area (where the system tab
+        // bar lives) so the two read as a single continuous frosted
+        // surface.
+        .background(alignment: .top)
+        {
+            UnevenRoundedRectangle(
+                cornerRadii: RectangleCornerRadii(
+                    topLeading:     24,
+                    bottomLeading:   0,
+                    bottomTrailing:  0,
+                    topTrailing:    24
+                ),
+                style: .continuous
+            )
+            .fill(.regularMaterial)
+            .ignoresSafeArea(edges: .bottom)
+        }
+        .task(id: track.filePath)
+        {
+            artwork = await loadArtwork(for: track.filePath)
         }
     }
 
