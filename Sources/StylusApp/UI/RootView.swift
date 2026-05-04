@@ -43,10 +43,17 @@ struct RootView: View
                     dragOffset: $dragOffset,
                     onDismiss:  { collapse() }
                 )
+                // isSource: true while expanded means the sheet's natural
+                // full-screen frame is the published anchor; the bar
+                // (isSource: false) flips to consumer and animates its
+                // matched frame to the sheet during transition. Without
+                // toggling isSource, SwiftUI would peg the sheet's frame
+                // to the bar's frame permanently and the sheet would
+                // render at bar size in the wrong place.
                 .matchedGeometryEffect(id:       "playerCard",
                                        in:       nowPlayingNS,
                                        anchor:   .bottom,
-                                       isSource: false)
+                                       isSource: true)
                 .zIndex(2)
             }
         }
@@ -67,31 +74,36 @@ struct RootView: View
         TabView
         {
             NavigationStack { LibraryListView() }
-                .withTransportBar(namespace: nowPlayingNS,
-                                  onPresent: { expand() })
+                .withTransportBar(namespace:  nowPlayingNS,
+                                  isExpanded: isExpanded,
+                                  onPresent:  { expand() })
                 .tabItem { Label("Library", systemImage: "music.note.list") }
 
             NavigationStack { ArtistsView() }
-                .withTransportBar(namespace: nowPlayingNS,
-                                  onPresent: { expand() })
+                .withTransportBar(namespace:  nowPlayingNS,
+                                  isExpanded: isExpanded,
+                                  onPresent:  { expand() })
                 .tabItem { Label("Artists", systemImage: "music.mic") }
 
             NavigationStack { AlbumsView() }
-                .withTransportBar(namespace: nowPlayingNS,
-                                  onPresent: { expand() })
+                .withTransportBar(namespace:  nowPlayingNS,
+                                  isExpanded: isExpanded,
+                                  onPresent:  { expand() })
                 .tabItem { Label("Albums", systemImage: "square.stack") }
 
             if folder.podcastFolderURL != nil
             {
                 NavigationStack { PodcastsView() }
-                    .withTransportBar(namespace: nowPlayingNS,
-                                      onPresent: { expand() })
+                    .withTransportBar(namespace:  nowPlayingNS,
+                                      isExpanded: isExpanded,
+                                      onPresent:  { expand() })
                     .tabItem { Label("Podcasts", systemImage: "mic") }
             }
 
             NavigationStack { SearchView() }
-                .withTransportBar(namespace: nowPlayingNS,
-                                  onPresent: { expand() })
+                .withTransportBar(namespace:  nowPlayingNS,
+                                  isExpanded: isExpanded,
+                                  onPresent:  { expand() })
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }
         }
     }
@@ -117,10 +129,16 @@ private extension View
     // inset, even while the player is expanded. That guarantees its
     // regularMaterial background is continuously present underneath
     // the sheet, so the moment the sheet's matched-geometry collapse
-    // ends there's no transparent frame between them. The sheet's
-    // matchedGeometryEffect uses the bar's frame as anchor.
-    func withTransportBar(namespace: Namespace.ID,
-                          onPresent: @escaping () -> Void) -> some View
+    // ends there's no transparent frame between them.
+    //
+    // isSource flips with isExpanded so that whichever view is
+    // "showing" claims its natural frame as the matched-geometry
+    // anchor. While collapsed: bar is source. While expanded: sheet
+    // is source (set in the parent body). The other side animates its
+    // matched frame to the new source during transitions.
+    func withTransportBar(namespace:  Namespace.ID,
+                          isExpanded: Bool,
+                          onPresent:  @escaping () -> Void) -> some View
     {
         safeAreaInset(edge: .bottom)
         {
@@ -128,7 +146,7 @@ private extension View
                 .matchedGeometryEffect(id:       "playerCard",
                                        in:       namespace,
                                        anchor:   .bottom,
-                                       isSource: true)
+                                       isSource: !isExpanded)
         }
     }
 }
