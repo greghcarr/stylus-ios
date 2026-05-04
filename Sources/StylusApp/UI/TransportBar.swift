@@ -64,7 +64,7 @@ struct TransportBar: View
                 .disabled(!queue.canAdvance)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
             .background(.regularMaterial)
             .overlay(alignment: .top)
