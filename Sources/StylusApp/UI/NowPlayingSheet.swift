@@ -117,9 +117,9 @@ struct NowPlayingSheet: View
     {
         VStack(spacing: 4)
         {
-            Slider(
+            CircleSlider(
                 value: $sliderValue,
-                in: 0 ... max(audio.duration, 1),
+                range: 0 ... max(audio.duration, 1),
                 onEditingChanged: { editing in
                     userIsScrubbing = editing
                     if !editing { audio.seek(to: sliderValue) }
