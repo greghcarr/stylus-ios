@@ -8,6 +8,9 @@ struct TransportBar: View
     @EnvironmentObject var audio: AudioPlayer
     @EnvironmentObject var queue: PlayQueue
 
+    // Caller hooks this to present the full-screen Now Playing sheet.
+    var onTap: () -> Void = {}
+
     @State private var artwork: UIImage?
 
     var body: some View
@@ -16,21 +19,31 @@ struct TransportBar: View
         {
             HStack(spacing: 12)
             {
-                artworkView
-                VStack(alignment: .leading, spacing: 1)
+                Button { onTap() }
+                label:
                 {
-                    Text(track.displayTitle)
-                        .font(.body)
-                        .lineLimit(1)
-                    if !track.subtitle.isEmpty
+                    HStack(spacing: 12)
                     {
-                        Text(track.subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        artworkView
+                        VStack(alignment: .leading, spacing: 1)
+                        {
+                            Text(track.displayTitle)
+                                .font(.body)
+                                .lineLimit(1)
+                            if !track.subtitle.isEmpty
+                            {
+                                Text(track.subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 0)
                     }
+                    .contentShape(Rectangle())
                 }
-                Spacer(minLength: 8)
+                .buttonStyle(.plain)
+
                 Button { audio.togglePlayPause() }
                 label:
                 {

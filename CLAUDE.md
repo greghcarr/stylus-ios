@@ -19,9 +19,11 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
 - Phase 3a (Swift PlayQueue, AVAudioEngine-based AudioPlayer, bottom
   TransportBar, auto-advance): done. Tap a row to queue from there to end
   of view; transport bar pinned above the safe area.
-- Phase 3b+ (full-screen Now Playing sheet, MPNowPlayingInfoCenter + lock
-  screen + remote commands, sidebar, analysis, Apple Music lookup,
-  playlists, polish): pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
+- Phase 3b (full-screen Now Playing sheet): done. Tap the bar's art / title
+  region to lift a sheet with large art, scrubber, and big transport.
+- Phase 3c+ (MPNowPlayingInfoCenter + lock screen + remote commands,
+  sidebar, analysis, Apple Music lookup, playlists, polish): pending.
+  See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 
 ## Build
 Day-to-day: open `StylusApp.xcodeproj` in Xcode, ⌘R. The Xcode project itself
@@ -79,8 +81,16 @@ stylus-ios/
                               scanning-with-progress-bar, populated list).
                               Pins TransportBar at the bottom; tap-to-enqueue
                               uses the current library order as the queue.
+                              Owns the .sheet that hosts NowPlayingSheet.
         TransportBar.swift    Bottom strip with art / title / play-pause /
-                              next. Hidden when nothing is current.
+                              next. Tappable art+title region calls the
+                              onTap closure (parent presents the sheet).
+                              Hidden when nothing is current.
+        NowPlayingSheet.swift Full-screen sheet: large art + title + scrubber
+                              + big transport. Scrubber uses a local @State
+                              that mirrors audio.currentTime when not being
+                              dragged, so user scrubbing doesn't fight with
+                              the 0.25 s currentTime ticker.
       Resources/
         Info.plist            UIFileSharingEnabled (for On My iPhone surface),
                               LSSupportsOpeningDocumentsInPlace,

@@ -128,7 +128,8 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       bpm + key alongside duration)
 - [x] **Phase 3a** Swift `PlayQueue`, AVAudioEngine-based `AudioPlayer`,
       bottom transport bar, auto-advance on track end
-- [ ] **Phase 3b** Full-screen Now Playing sheet (large art, scrubber, queue)
+- [x] **Phase 3b** Full-screen Now Playing sheet (large art, scrubber,
+      big transport)
 - [ ] **Phase 3c** `MPNowPlayingInfoCenter` + lock-screen art + remote commands
 - [ ] **Phase 4** Sidebar views (Artists / Albums / Playlists / Search)
 - [ ] **Phase 5** Background analysis (BPM / key)

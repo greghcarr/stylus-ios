@@ -9,6 +9,7 @@ struct LibraryListView: View
     @EnvironmentObject var folder:  MusicFolderStore
 
     @State private var showFolderPicker = false
+    @State private var showNowPlaying   = false
 
     var body: some View
     {
@@ -18,7 +19,7 @@ struct LibraryListView: View
             {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                TransportBar()
+                TransportBar(onTap: { showNowPlaying = true })
             }
             .navigationTitle("Library")
             .toolbar { toolbar }
@@ -33,6 +34,10 @@ struct LibraryListView: View
                 folder.set(url: url)
                 library.scan(folder: url)
             }
+        }
+        .sheet(isPresented: $showNowPlaying)
+        {
+            NowPlayingSheet()
         }
     }
 
