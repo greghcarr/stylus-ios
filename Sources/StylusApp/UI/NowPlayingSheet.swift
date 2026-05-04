@@ -61,7 +61,7 @@ struct NowPlayingSheet: View
         }
         .task(id: track.filePath)
         {
-            artwork = await loadArtwork(for: track.filePath)
+            artwork = await loadFullArtwork(for: track.filePath)
         }
     }
 
@@ -78,7 +78,11 @@ struct NowPlayingSheet: View
                     .padding(.horizontal, 4)
                     .padding(.top, 8)
 
-                VStack(spacing: 0)
+                // LazyVStack so a 1000-track queue doesn't materialise every
+                // upcoming row (and load every artwork) up front when the
+                // sheet first appears. Only rows entering the viewport
+                // build their views and run their .task.
+                LazyVStack(spacing: 0)
                 {
                     ForEach(Array(upcoming.enumerated()), id: \.element.id)
                     { (offset, upcomingTrack) in
@@ -264,7 +268,7 @@ private struct UpNextRow: View
         .contentShape(Rectangle())
         .task(id: track.filePath)
         {
-            artwork = await loadArtwork(for: track.filePath)
+            artwork = await loadThumbnail(for: track.filePath)
         }
     }
 

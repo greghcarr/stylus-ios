@@ -104,7 +104,7 @@ struct TransportBar: View
         }
         .task(id: track.filePath)
         {
-            artwork = await loadArtwork(for: track.filePath)
+            artwork = await loadThumbnail(for: track.filePath)
         }
     }
 

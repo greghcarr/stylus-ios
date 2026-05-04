@@ -53,13 +53,13 @@ final class NowPlayingController
         if track.filePath != lastTrackPath
         {
             lastTrackPath  = track.filePath
-            currentArtwork = ArtworkCache.shared.cached(for: track.filePath)
+            currentArtwork = ArtworkCache.shared.cachedFullArtwork(for: track.filePath)
 
             if currentArtwork == nil
             {
                 let path = track.filePath
                 Task { [weak self] in
-                    let img = await loadArtwork(for: path)
+                    let img = await loadFullArtwork(for: path)
                     guard let self = self,
                           self.audio?.currentTrack?.filePath == path
                     else { return }

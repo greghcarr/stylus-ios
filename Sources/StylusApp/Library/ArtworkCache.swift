@@ -1,86 +1,146 @@
 import UIKit
+import ImageIO
 
-// In-memory cache of decoded album-art `UIImage`s keyed by track file path.
-// Bounded by `NSCache.countLimit` so iOS can evict under memory pressure.
+// Two-tier in-memory cache for decoded album art:
+//   - thumbnails: 132 px max edge (44 pt @ 3x). Used by every list row,
+//     the transport bar, and the Up Next list in the Now Playing sheet.
+//   - largeArt:    1200 px max edge. Used by the Now Playing sheet's
+//     hero artwork and by MPNowPlayingInfoCenter (lock-screen + AirPlay
+//     output).
 //
-// Not actor-isolated: NSCache is documented thread-safe, so cache hits /
-// stores / invalidations can fire from anywhere (the lookup completion
-// callback, off-main artwork decoders, the main-thread row .task). That
-// also keeps loadArtwork(for:) free of awaits when reading the cache.
+// The previous implementation cached full-resolution UIImages (often
+// ~1000 x 1000 JPEGs decoded into ~4 MB each) and bounded only by count
+// (200). On a 1000-track library the resident memory could shoot past
+// 800 MB and iOS would kill the app, especially when the Up Next list
+// fanned out artwork loads on scroll. ImageIO downsampling at decode
+// time keeps a thumbnail at ~50 KB and a hero image at ~1 MB.
 final class ArtworkCache
 {
     static let shared = ArtworkCache()
 
-    private let cache = NSCache<NSString, UIImage>()
+    static let thumbnailMaxPixelSize: CGFloat = 132
+    static let fullArtMaxPixelSize:   CGFloat = 1200
+
+    private let thumbnails = NSCache<NSString, UIImage>()
+    private let largeArt   = NSCache<NSString, UIImage>()
 
     private init()
     {
-        cache.countLimit = 200
+        thumbnails.countLimit = 300
+        largeArt.countLimit   = 8
     }
 
-    func cached(for path: String) -> UIImage?
+    func cachedThumbnail(for path: String) -> UIImage?
     {
-        cache.object(forKey: path as NSString)
+        thumbnails.object(forKey: path as NSString)
     }
 
-    func store(_ image: UIImage, for path: String)
+    func cachedFullArtwork(for path: String) -> UIImage?
     {
-        cache.setObject(image, forKey: path as NSString)
+        largeArt.object(forKey: path as NSString)
     }
 
-    // Drops a single entry. Called by LookupController when a sidecar
-    // artwork file has just been written so the next decode pass picks it up.
+    func storeThumbnail(_ image: UIImage, for path: String)
+    {
+        thumbnails.setObject(image, forKey: path as NSString)
+    }
+
+    func storeFullArtwork(_ image: UIImage, for path: String)
+    {
+        largeArt.setObject(image, forKey: path as NSString)
+    }
+
+    // Drops both tiers for the given track. Used after a lookup writes a
+    // new sidecar so subsequent loads pick it up.
     func invalidate(for path: String)
     {
-        cache.removeObject(forKey: path as NSString)
+        thumbnails.removeObject(forKey: path as NSString)
+        largeArt.removeObject(forKey: path as NSString)
     }
 }
 
-// Returns the album art for the given track path, decoding off the main
-// thread on cache miss. Mirrors the desktop's AlbumArtExtractor fallback
-// chain (embedded -> .styl-art.jpg sidecar -> folder-level cover.jpg etc.)
-// since the desktop's juce::Image-returning function isn't linkable on iOS
-// (juce_graphics is not in the iOS build).
-func loadArtwork(for path: String) async -> UIImage?
+// Reads raw artwork bytes from disk via the same fallback chain as before:
+// embedded artwork via AVFoundation -> .styl-art.jpg sidecar -> folder-
+// level cover.{jpg,jpeg,png}. Returns Data (undecoded); caller decides
+// what size to decode at.
+private func loadArtworkData(for path: String) -> Data?
 {
-    if let cached = ArtworkCache.shared.cached(for: path) { return cached }
+    var size: Int = 0
+    if let bytes = path.withCString({ Stylus_ExtractArtwork($0, &size) }),
+       size > 0
+    {
+        let data = Data(bytes: bytes, count: size)
+        Stylus_FreeArtworkBytes(bytes)
+        return data
+    }
+
+    let url = URL(fileURLWithPath: path)
+    let dir = url.deletingLastPathComponent()
+
+    let sidecar = dir.appendingPathComponent("." + url.lastPathComponent + ".styl-art.jpg")
+    if let d = try? Data(contentsOf: sidecar) { return d }
+
+    let names = ["cover", "folder", "artwork", "album", "front"]
+    let exts  = ["jpg", "jpeg", "png"]
+    for n in names
+    {
+        for e in exts
+        {
+            let candidate = dir.appendingPathComponent("\(n).\(e)")
+            if let d = try? Data(contentsOf: candidate) { return d }
+        }
+    }
+    return nil
+}
+
+// ImageIO-backed downsample: decodes at the smallest size that satisfies
+// `maxPixelSize`. kCGImageSourceShouldCacheImmediately forces decode now
+// (not on first paint), so we don't pay the cost on the main thread later.
+private func decodeImage(data: Data, maxPixelSize: CGFloat) -> UIImage?
+{
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil)
+    else { return nil }
+
+    let options: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform:   true,
+        kCGImageSourceShouldCacheImmediately:         true,
+        kCGImageSourceThumbnailMaxPixelSize:          maxPixelSize,
+    ]
+    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    else { return nil }
+
+    return UIImage(cgImage: cgImage,
+                   scale:   UIScreen.main.scale,
+                   orientation: .up)
+}
+
+// Async decode + cache for thumbnail-sized art. Used by every list row.
+func loadThumbnail(for path: String) async -> UIImage?
+{
+    if let cached = ArtworkCache.shared.cachedThumbnail(for: path) { return cached }
 
     let img: UIImage? = await Task.detached(priority: .userInitiated)
     {
-        // 1. Embedded artwork via AVFoundation (bridge wrapper).
-        var size: Int = 0
-        if let bytes = path.withCString({ Stylus_ExtractArtwork($0, &size) }),
-           size > 0
-        {
-            let data = Data(bytes: bytes, count: size)
-            Stylus_FreeArtworkBytes(bytes)
-            if let img = UIImage(data: data) { return img }
-        }
-
-        let url = URL(fileURLWithPath: path)
-        let dir = url.deletingLastPathComponent()
-
-        // 2. Per-track sidecar written by the desktop's Apple Music lookup
-        //    task: .<filename>.styl-art.jpg next to the audio file.
-        let sidecar = dir.appendingPathComponent("." + url.lastPathComponent + ".styl-art.jpg")
-        if let img = UIImage(contentsOfFile: sidecar.path) { return img }
-
-        // 3. Folder-level cover art. APFS is case-insensitive so we don't
-        //    need to enumerate case variants.
-        let names = ["cover", "folder", "artwork", "album", "front"]
-        let exts  = ["jpg", "jpeg", "png"]
-        for n in names
-        {
-            for e in exts
-            {
-                let candidate = dir.appendingPathComponent("\(n).\(e)")
-                if let img = UIImage(contentsOfFile: candidate.path) { return img }
-            }
-        }
-
-        return nil
+        guard let data = loadArtworkData(for: path) else { return nil }
+        return decodeImage(data: data, maxPixelSize: ArtworkCache.thumbnailMaxPixelSize)
     }.value
 
-    if let img = img { ArtworkCache.shared.store(img, for: path) }
+    if let img = img { ArtworkCache.shared.storeThumbnail(img, for: path) }
+    return img
+}
+
+// Async decode + cache for the larger Now Playing / lock-screen artwork.
+func loadFullArtwork(for path: String) async -> UIImage?
+{
+    if let cached = ArtworkCache.shared.cachedFullArtwork(for: path) { return cached }
+
+    let img: UIImage? = await Task.detached(priority: .userInitiated)
+    {
+        guard let data = loadArtworkData(for: path) else { return nil }
+        return decodeImage(data: data, maxPixelSize: ArtworkCache.fullArtMaxPixelSize)
+    }.value
+
+    if let img = img { ArtworkCache.shared.storeFullArtwork(img, for: path) }
     return img
 }

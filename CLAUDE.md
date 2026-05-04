@@ -292,9 +292,20 @@ and (eventually, Phase X) CarPlay all drive the same audio engine.
 
 ### Album art loading
 [Sources/StylusApp/Library/ArtworkCache.swift](Sources/StylusApp/Library/ArtworkCache.swift)
-exposes a `MainActor`-isolated `ArtworkCache` (singleton, `NSCache` of
-`UIImage` keyed by track file path, count limit 200) plus a free async
-`loadArtwork(for:)` that decodes off the main thread on cache miss.
+exposes two NSCaches keyed by track file path: `thumbnails` (132 px max,
+limit 300) for list rows / transport bar / Up Next, and `largeArt`
+(1200 px max, limit 8) for the Now Playing hero artwork and
+`MPMediaItemArtwork` on the lock screen. The free async helpers
+`loadThumbnail(for:)` and `loadFullArtwork(for:)` route to the right
+tier; both decode off the main thread on cache miss.
+
+ImageIO downsampling at decode time (via
+`CGImageSourceCreateThumbnailAtIndex` with
+`kCGImageSourceThumbnailMaxPixelSize`) keeps 1000 x 1000 album art
+JPEGs from being decoded into ~4 MB UIImages just to render at 44 pt
+thumbnails; thumb decode lands at ~50 KB. The previous full-resolution
+cache was the dominant memory pressure source and the proximate cause
+of OOM kills when scrolling Up Next on a long queue.
 
 The lookup chain mirrors the desktop's
 [AlbumArtExtractor.cpp](External/stylus/src/audio/AlbumArtExtractor.cpp),

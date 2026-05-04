@@ -34,7 +34,7 @@ struct TrackRow: View
         .padding(.vertical, 4)
         .task(id: track.filePath)
         {
-            artwork = await loadArtwork(for: track.filePath)
+            artwork = await loadThumbnail(for: track.filePath)
         }
     }
 

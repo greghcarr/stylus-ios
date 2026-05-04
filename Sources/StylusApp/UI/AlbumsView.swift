@@ -99,7 +99,7 @@ private struct AlbumRow: View
         .task(id: representativePath)
         {
             guard let p = representativePath else { return }
-            artwork = await loadArtwork(for: p)
+            artwork = await loadThumbnail(for: p)
         }
     }
 
