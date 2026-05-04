@@ -91,17 +91,6 @@ final class LibraryStore: ObservableObject
         tracks.append(track)
     }
 
-    // Replaces an existing track in-place by file-path identity. Used by
-    // AnalysisController when a freshly-analysed track comes back, so BPM /
-    // key in the UI update without a full rescan.
-    func updateTrack(_ updated: Track)
-    {
-        if let idx = tracks.firstIndex(where: { $0.filePath == updated.filePath })
-        {
-            tracks[idx] = updated
-        }
-    }
-
     fileprivate func appendScannedTrack(_ track: Track)
     {
         scanBuffer.append(track)
@@ -117,6 +106,29 @@ final class LibraryStore: ObservableObject
         isScanning    = false
         scannedCount  = 0
         expectedCount = 0
+    }
+
+    // Replaces an existing track in-place by file-path identity. Used by
+    // Analysis / Lookup controllers when a freshly-processed track comes
+    // back, so BPM / key / metadata in the UI update without a full rescan.
+    func updateTrack(_ updated: Track)
+    {
+        if let idx = tracks.firstIndex(where: { $0.filePath == updated.filePath })
+        {
+            tracks[idx] = updated
+        }
+    }
+
+    // Persists the edited Track to its .styl sidecar AND updates the
+    // in-memory entry. The bridge's Stylus_StylSave re-loads existing
+    // sidecar data first so disk-side fields the user didn't edit
+    // (playCount, dateAdded, lufs, etc.) survive.
+    @discardableResult
+    func save(_ track: Track) -> Bool
+    {
+        let ok = saveTrackToStyl(track)
+        if ok { updateTrack(track) }
+        return ok
     }
 
     private static func countAudioFiles(at root: URL) -> Int
@@ -149,6 +161,53 @@ final class LibraryStore: ObservableObject
             }
         }
         return count
+    }
+}
+
+// Free function so the deeply-nested withCString chains needed to fill a
+// StylusTrackC don't clutter LibraryStore. Shared by EditInfoView's Save.
+func saveTrackToStyl(_ track: Track) -> Bool
+{
+    return track.filePath.withCString
+    { p in
+        track.title.withCString
+        { ti in
+            track.artist.withCString
+            { a in
+                track.album.withCString
+                { al in
+                    track.genre.withCString
+                    { g in
+                        track.year.withCString
+                        { y in
+                            track.key.withCString
+                            { k in
+                                var c = StylusTrackC()
+                                c.filePath        = p
+                                c.title           = ti
+                                c.artist          = a
+                                c.album           = al
+                                c.genre           = g
+                                c.year            = y
+                                c.musicalKey      = k
+                                c.trackNumber     = Int32(track.trackNumber)
+                                c.durationSeconds = track.durationSeconds
+                                c.bpm             = track.bpm
+                                c.lufs            = 0
+                                c.isPodcast       = 0
+                                c.podcast         = nil
+                                c.dateAddedMillis = 0
+                                c.playCount       = 0
+                                return withUnsafePointer(to: &c)
+                                { ptr in
+                                    Stylus_StylSave(ptr) != 0
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

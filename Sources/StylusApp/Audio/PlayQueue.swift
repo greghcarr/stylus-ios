@@ -53,4 +53,35 @@ final class PlayQueue: ObservableObject
         currentIndex = index
         return currentTrack
     }
+
+    // Inserts a track right after the current one. If nothing's playing,
+    // appends and positions the cursor on it (the next play call will
+    // start there).
+    func insertNext(_ track: Track)
+    {
+        if tracks.isEmpty
+        {
+            tracks       = [track]
+            currentIndex = 0
+        }
+        else
+        {
+            let target = min(currentIndex + 1, tracks.count)
+            tracks.insert(track, at: target)
+        }
+    }
+
+    // Appends a track at the end of the queue.
+    func append(_ track: Track)
+    {
+        if tracks.isEmpty
+        {
+            tracks       = [track]
+            currentIndex = 0
+        }
+        else
+        {
+            tracks.append(track)
+        }
+    }
 }

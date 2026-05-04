@@ -278,6 +278,40 @@ void Stylus_LibraryStartScan (StylusLibraryHandle handle,
     h->scanner.scanFolders (h->folders, /*podcastFolders*/ {});
 }
 
+int32_t Stylus_StylSave (const StylusTrackC* track)
+{
+    if (track == nullptr || track->filePath == nullptr) return 0;
+
+    Stylus::TrackInfo info;
+    info.file = juce::File (juce::String (juce::CharPointer_UTF8 (track->filePath)));
+
+    // Preserve disk-side fields the caller didn't touch (playCount,
+    // dateAdded, lufs, hidden, stylHadTrackNumber, etc.). The caller only
+    // has to fill the fields they want to overwrite.
+    Stylus::StylFile::load (info);
+
+    auto setIfNonNull = [] (juce::String& dst, const char* src)
+    {
+        if (src != nullptr) dst = juce::String (juce::CharPointer_UTF8 (src));
+    };
+
+    setIfNonNull (info.title,      track->title);
+    setIfNonNull (info.artist,     track->artist);
+    setIfNonNull (info.album,      track->album);
+    setIfNonNull (info.genre,      track->genre);
+    setIfNonNull (info.year,       track->year);
+    info.trackNumber = track->trackNumber;
+    info.bpm         = track->bpm;
+    setIfNonNull (info.musicalKey, track->musicalKey);
+    info.lufs        = static_cast<float> (track->lufs);
+    info.isPodcast   = track->isPodcast != 0;
+    setIfNonNull (info.podcast,    track->podcast);
+    if (track->dateAddedMillis > 0) info.dateAdded = track->dateAddedMillis;
+    if (track->playCount       > 0) info.playCount = track->playCount;
+
+    return Stylus::StylFile::save (info) ? 1 : 0;
+}
+
 int32_t Stylus_StylLoad (const char* trackPath, StylusTrackC* outTrack)
 {
     if (trackPath == nullptr || outTrack == nullptr) return 0;

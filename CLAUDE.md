@@ -32,12 +32,18 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
   Library tab's overflow menu; the bridged `AnalysisEngine` writes the
   `.styl` sidecar on each track and the in-memory library updates as
   tracks finish so BPM / key appear without a rescan.
-- Phase 6 (iTunes Search lookup, library-wide art): done for the
-  artwork-only flow. Library tab's overflow menu has "Look up missing
-  artwork"; the bridged `AppleMusicLookup` writes a `.styl-art.jpg`
-  sidecar per track and `ArtworkCache.invalidate(for:)` drops the
-  stale cache entry so the next decode picks up the new file. Full
-  metadata lookup + Edit Info sheet are deferred to a later sub-phase.
+- Phase 6a (iTunes Search lookup, library-wide art): done. Library tab
+  overflow has "Look up missing artwork"; the bridged `AppleMusicLookup`
+  writes `.styl-art.jpg` per track and `ArtworkCache.invalidate(for:)`
+  drops the stale cache entry so the next decode picks up the new file.
+- Phase 6b (Edit Info sheet + per-track context menu): done. Long-press
+  a track row to get Play Next / Add to Queue / Look up / Edit Info....
+  EditInfoView is a Form-based metadata editor with a "Look up on
+  iTunes" button that uses currently-edited fields as the query hint
+  and repopulates the form when the result arrives. Save persists via
+  `Stylus_StylSave`, which re-loads the existing sidecar first so
+  disk-side fields the user didn't edit (playCount, dateAdded, lufs,
+  etc.) survive.
 - Phase 7+ (playlists, polish):
   pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 
@@ -130,7 +136,18 @@ stylus-ios/
                               list (Library, Artist, Album, Search).
         TrackRowButton.swift  Button wrapper that, on tap, sets the queue
                               to the visible-track slice and starts
-                              playback at the tapped row.
+                              playback at the tapped row. Long-press
+                              .contextMenu surfaces Play Next /
+                              Add to Queue / Look up / Edit Info.... Owns
+                              the .sheet that hosts EditInfoView.
+        EditInfoView.swift    Per-track metadata editor (Form). "Look up
+                              on iTunes" kicks LookupController.enqueue
+                              with the currently-edited fields; .onChange
+                              on library.tracks repopulates the form when
+                              the result lands. Save calls
+                              LibraryStore.save which round-trips through
+                              Stylus_StylSave (load-then-overwrite-then-
+                              save preserves untouched disk fields).
         EmptyStateView.swift  iOS-16-compatible stand-in for SwiftUI 17's
                               ContentUnavailableView.
         TransportBar.swift    Bottom strip with art / title / play-pause /

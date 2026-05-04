@@ -85,6 +85,12 @@ void Stylus_LibraryStartScan(StylusLibraryHandle handle,
 // Stylus_StylLoad on the same thread.
 int32_t Stylus_StylLoad(const char* trackPath, StylusTrackC* outTrack);
 
+// Writes the given track to its .styl sidecar. Internally re-loads the
+// sidecar first to preserve fields the caller didn't touch (playCount,
+// dateAdded, lufs, etc.); the caller only has to populate the fields they
+// want to overwrite. Returns 1 on success.
+int32_t Stylus_StylSave(const StylusTrackC* track);
+
 // --- Background BPM / key analysis ---
 
 typedef struct StylusAnalysis StylusAnalysis;

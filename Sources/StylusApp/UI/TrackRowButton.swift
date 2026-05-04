@@ -1,15 +1,18 @@
 import SwiftUI
 
 // Wraps TrackRow in a Button that, on tap, makes `visibleTracks` the new
-// queue (positioned at this row) and starts playback. Mirrors the desktop
-// rule "tap a row, queue this row to end of view".
+// queue (positioned at this row) and starts playback. Long-press surfaces
+// a context menu (Play Next / Add to Queue / Look up / Edit Info...).
 struct TrackRowButton: View
 {
     let track:         Track
     let visibleTracks: [Track]
 
-    @EnvironmentObject var queue: PlayQueue
-    @EnvironmentObject var audio: AudioPlayer
+    @EnvironmentObject var queue:  PlayQueue
+    @EnvironmentObject var audio:  AudioPlayer
+    @EnvironmentObject var lookup: LookupController
+
+    @State private var showEdit = false
 
     var body: some View
     {
@@ -26,6 +29,50 @@ struct TrackRowButton: View
         // Pin the row separator's leading edge to the cell's leading edge
         // instead of letting SwiftUI infer it from the album-art column.
         .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+        .contextMenu
+        {
+            Button
+            {
+                queue.insertNext(track)
+            }
+            label:
+            {
+                Label("Play Next", systemImage: "text.insert")
+            }
+
+            Button
+            {
+                queue.append(track)
+            }
+            label:
+            {
+                Label("Add to Queue", systemImage: "text.append")
+            }
+
+            Divider()
+
+            Button
+            {
+                lookup.enqueue(track, overwrite: false)
+            }
+            label:
+            {
+                Label("Look up on iTunes", systemImage: "magnifyingglass")
+            }
+
+            Button
+            {
+                showEdit = true
+            }
+            label:
+            {
+                Label("Edit Info\u{2026}", systemImage: "info.circle")
+            }
+        }
+        .sheet(isPresented: $showEdit)
+        {
+            EditInfoView(trackPath: track.filePath)
+        }
     }
 
     private func playFromRow()
