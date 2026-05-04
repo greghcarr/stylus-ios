@@ -89,14 +89,63 @@ juce::String canonicalPath (const juce::File& f)
     return path;
 }
 
+// Returns the position of the first character after
+// `/Containers/Data/Application/<UUID>/` if the path looks like an iOS
+// app-sandbox path, else -1. Used to detect "same folder, different
+// container UUID" across Xcode reinstalls (which assign a fresh data
+// container UUID to the app while migrating the contents).
+int sandboxSuffixStart (const juce::String& s)
+{
+    const juce::String marker ("/Containers/Data/Application/");
+    const int markerIdx = s.indexOf (marker);
+    if (markerIdx < 0) return -1;
+    const int afterMarker = markerIdx + marker.length();
+    const int slashAfter  = s.indexOfChar (afterMarker, '/');
+    return slashAfter >= 0 ? slashAfter + 1 : -1;
+}
+
+// True if cached and current paths look like the SAME logical folder
+// reachable through different sandbox container UUIDs across reinstalls.
+bool sameLogicalFolder (const juce::File& cached, const juce::File& current)
+{
+    const auto a = canonicalPath (cached);
+    const auto b = canonicalPath (current);
+    if (a == b) return true;
+
+    const int aSfx = sandboxSuffixStart (a);
+    const int bSfx = sandboxSuffixStart (b);
+    if (aSfx < 0 || bSfx < 0) return false;
+    return a.substring (aSfx) == b.substring (bSfx);
+}
+
 bool foldersMatch (const std::vector<juce::File>& a,
                    const std::vector<juce::File>& b)
 {
     if (a.size() != b.size()) return false;
     for (size_t i = 0; i < a.size(); ++i)
-        if (canonicalPath (a[i]) != canonicalPath (b[i]))
+        if (! sameLogicalFolder (a[i], b[i]))
             return false;
     return true;
+}
+
+// Rewrites a track path's cached-folder prefix to the current-folder
+// prefix when the two folders are sameLogicalFolder. Preserves paths
+// that don't match any known root (rare; would only happen if the
+// cache was hand-edited or moved across folder configurations).
+juce::String migratePathIfNeeded (const juce::String& trackPath,
+                                   const std::vector<juce::File>& cachedRoots,
+                                   const std::vector<juce::File>& currentRoots)
+{
+    const size_t n = std::min (cachedRoots.size(), currentRoots.size());
+    for (size_t i = 0; i < n; ++i)
+    {
+        const auto cachedPrefix  = cachedRoots[i].getFullPathName();
+        const auto currentPrefix = currentRoots[i].getFullPathName();
+        if (cachedPrefix == currentPrefix) continue;       // no migration needed
+        if (! trackPath.startsWith (cachedPrefix)) continue;
+        return currentPrefix + trackPath.substring (cachedPrefix.length());
+    }
+    return trackPath;
 }
 
 } // namespace
@@ -164,6 +213,11 @@ int32_t Stylus_LibraryLoadCache (StylusLibraryHandle handle,
     int32_t count = 0;
     for (auto& t : tracks)
     {
+        const auto migrated = migratePathIfNeeded (t.file.getFullPathName(),
+                                                    cachedMusicFolders, h->folders);
+        if (migrated != t.file.getFullPathName())
+            t.file = juce::File (migrated);
+
         TrackBytes tb (std::move (t));
         const StylusTrackC c = tb.asC();
         onTrack (&c, userData);
