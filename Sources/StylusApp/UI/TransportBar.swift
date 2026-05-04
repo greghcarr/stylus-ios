@@ -4,9 +4,9 @@ import SwiftUI
 // safe-area inset on a tabless layout). Hidden when nothing is loaded; shows
 // thumbnail + title/artist + play/pause + skip when a track is current.
 //
-// Fades in over 1 s when a track first loads (when audio.currentTrack flips
-// from nil to non-nil). Track-to-track changes don't re-fade since the bar
-// stays current throughout.
+// Fades in over 0.5 s when a track first loads (when audio.currentTrack
+// flips from nil to non-nil). Track-to-track changes don't re-fade since
+// the bar stays current throughout.
 struct TransportBar: View
 {
     @EnvironmentObject var audio: AudioPlayer
@@ -27,7 +27,7 @@ struct TransportBar: View
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 1), value: audio.currentTrack != nil)
+        .animation(.easeInOut(duration: 0.5), value: audio.currentTrack != nil)
     }
 
     @ViewBuilder
