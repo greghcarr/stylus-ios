@@ -14,8 +14,13 @@ import UIKit
 @MainActor
 final class NowPlayingController
 {
-    private weak var audio:        AudioPlayer?
-    private var      lastTrackPath: String?
+    private weak var audio:          AudioPlayer?
+    private var      lastTrackPath:  String?
+    // Strong reference to the current track's artwork so we don't lose it
+    // when refresh() rebuilds the info dict (e.g. on pause from the lock
+    // screen). NSCache can evict under memory pressure; this property keeps
+    // a survivor copy for the duration the track is current.
+    private var      currentArtwork: UIImage?
 
     init(audio: AudioPlayer)
     {
@@ -37,8 +42,31 @@ final class NowPlayingController
         else
         {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-            lastTrackPath = nil
+            lastTrackPath  = nil
+            currentArtwork = nil
             return
+        }
+
+        // Track changed: reset cached artwork. If it's already in the
+        // ArtworkCache, capture it synchronously; otherwise kick an async
+        // load that will call refresh() again once it lands.
+        if track.filePath != lastTrackPath
+        {
+            lastTrackPath  = track.filePath
+            currentArtwork = ArtworkCache.shared.cached(for: track.filePath)
+
+            if currentArtwork == nil
+            {
+                let path = track.filePath
+                Task { [weak self] in
+                    let img = await loadArtwork(for: path)
+                    guard let self = self,
+                          self.audio?.currentTrack?.filePath == path
+                    else { return }
+                    self.currentArtwork = img
+                    self.refresh()
+                }
+            }
         }
 
         var info: [String: Any] = [
@@ -50,36 +78,13 @@ final class NowPlayingController
         if !track.artist.isEmpty { info[MPMediaItemPropertyArtist]     = track.artist }
         if !track.album.isEmpty  { info[MPMediaItemPropertyAlbumTitle] = track.album  }
 
-        // If the artwork is already in the cache, attach it synchronously so
-        // the lock-screen / Control Center never flickers from "no art" to
-        // "with art" on a track change.
-        if let cached = ArtworkCache.shared.cached(for: track.filePath)
+        if let img = currentArtwork
         {
             info[MPMediaItemPropertyArtwork] =
-                MPMediaItemArtwork(boundsSize: cached.size) { _ in cached }
+                MPMediaItemArtwork(boundsSize: img.size) { _ in img }
         }
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-
-        // First time we see this track, kick off an async art load if it
-        // wasn't in the cache. Subsequent refreshes for the same track skip
-        // re-loading.
-        let isNewTrack = (track.filePath != lastTrackPath)
-        lastTrackPath = track.filePath
-        if isNewTrack && info[MPMediaItemPropertyArtwork] == nil
-        {
-            let path = track.filePath
-            Task { [weak self] in
-                guard let img = await loadArtwork(for: path) else { return }
-                guard let self = self,
-                      self.audio?.currentTrack?.filePath == path
-                else { return }
-                let artwork = MPMediaItemArtwork(boundsSize: img.size) { _ in img }
-                var current = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-                current[MPMediaItemPropertyArtwork] = artwork
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = current
-            }
-        }
     }
 
     private func registerRemoteCommands()
