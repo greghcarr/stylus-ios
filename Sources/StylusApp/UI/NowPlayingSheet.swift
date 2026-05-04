@@ -53,6 +53,7 @@ struct NowPlayingSheet: View
                 titleBlock(track)
                 scrubber
                 transport
+                upNext
             }
             .padding(.horizontal, 24)
             .padding(.top,        32)
@@ -62,6 +63,48 @@ struct NowPlayingSheet: View
         {
             artwork = await loadArtwork(for: track.filePath)
         }
+    }
+
+    @ViewBuilder
+    private var upNext: some View
+    {
+        let upcoming = Array(queue.tracks.dropFirst(queue.currentIndex + 1))
+        if !upcoming.isEmpty
+        {
+            VStack(alignment: .leading, spacing: 8)
+            {
+                Text("Up Next")
+                    .font(.headline)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 8)
+
+                VStack(spacing: 0)
+                {
+                    ForEach(Array(upcoming.enumerated()), id: \.element.id)
+                    { (offset, upcomingTrack) in
+                        Button
+                        {
+                            jump(to: queue.currentIndex + 1 + offset)
+                        }
+                        label:
+                        {
+                            UpNextRow(track: upcomingTrack)
+                        }
+                        .buttonStyle(.plain)
+
+                        if offset < upcoming.count - 1
+                        {
+                            Divider().padding(.leading, 60)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func jump(to index: Int)
+    {
+        if let next = queue.jump(to: index) { audio.play(next) }
     }
 
     @ViewBuilder
@@ -182,5 +225,72 @@ struct NowPlayingSheet: View
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let total = Int(seconds)
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
+// Compact "Up Next" row: smaller thumb + smaller text than the main library
+// row; lives inside the Now Playing sheet, not the main lists.
+private struct UpNextRow: View
+{
+    let track: Track
+
+    @State private var artwork: UIImage?
+
+    var body: some View
+    {
+        HStack(spacing: 12)
+        {
+            thumb
+            VStack(alignment: .leading, spacing: 2)
+            {
+                Text(track.displayTitle)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                if !track.subtitle.isEmpty
+                {
+                    Text(track.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            Text(track.formattedDuration)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .task(id: track.filePath)
+        {
+            artwork = await loadArtwork(for: track.filePath)
+        }
+    }
+
+    @ViewBuilder
+    private var thumb: some View
+    {
+        Group
+        {
+            if let artwork = artwork
+            {
+                Image(uiImage: artwork)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            }
+            else
+            {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.15))
+                    .overlay(
+                        Image(systemName: "music.note")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    )
+            }
+        }
+        .frame(width: 36, height: 36)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
