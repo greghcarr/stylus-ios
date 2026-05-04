@@ -233,35 +233,39 @@ struct TransportBar: View
     @ViewBuilder
     private var miniTransportButtons: some View
     {
-        // Sized so the skip button's trailing frame edge meets the
-        // bar's outer .padding(.horizontal, 20) -- skip lands ~20 pt
-        // from the screen's right edge, matching the artwork's 32 pt
-        // distance from the left. Buttons use simple SF Symbols
-        // (no silver background) to keep the compact bar visually
-        // light; the silver-style buttons live on the expanded sheet.
-        HStack(spacing: 4)
+        // Same SilverCircleButtonStyle as the expanded NowPlaying-
+        // Sheet's transport row -- silver gradient + black glyphs
+        // matching the app icon and the desktop's transport disc.
+        // Sizes are scaled down from the sheet (44 / 36 vs 84 / 64)
+        // so the mini bar still reads as compact next to the title
+        // text. The skip button's trailing frame edge meets the
+        // bar's outer .padding(.horizontal, 20) so it lands ~20 pt
+        // from the screen's right edge, matching the artwork's
+        // 32 pt distance from the left.
+        HStack(spacing: 8)
         {
             Button { audio.togglePlayPause() }
             label:
             {
                 // Fixed inner frame keeps the play / pause glyph
-                // from shifting horizontally as it swaps.
+                // from shifting horizontally inside the silver
+                // circle as the icon name swaps (different glyph
+                // widths).
                 Image(systemName: audio.isPlaying ? "pause.fill"
                                                   : "play.fill")
-                    .font(.title2)
-                    .frame(width: 36, height: 36)
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(width: 20, height: 20)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SilverCircleButtonStyle(size: 44))
 
             Button { audio.playNext() }
             label:
             {
                 Image(systemName: "forward.end.fill")
-                    .font(.title3)
-                    .frame(width: 36, height: 36)
+                    .font(.system(size: 14, weight: .semibold))
                     .opacity(queue.canAdvance ? 1.0 : 0.35)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SilverCircleButtonStyle(size: 36))
             .disabled(!queue.canAdvance)
         }
     }

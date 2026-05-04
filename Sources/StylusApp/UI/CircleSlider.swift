@@ -9,7 +9,12 @@ struct CircleSlider: View
     let range:                ClosedRange<Double>
     let onEditingChanged:     (Bool) -> Void
 
-    @State private var isDragging = false
+    @State private var isDragging   = false
+    // Captured at gesture-start so each drag tick can apply a
+    // delta from THAT starting value rather than the live value
+    // (the live value is the one we're mutating, which would
+    // produce compounding drift).
+    @State private var initialValue: Double = 0
 
     private let trackHeightIdle:    CGFloat = 4
     private let trackHeightActive:  CGFloat = 7
@@ -67,29 +72,43 @@ struct CircleSlider: View
                             y:      isDragging ? 2 : 1)
                     .offset(x: thumbLeading)
                     .animation(animation, value: isDragging)
+                    // Gesture is on the THUMB only, not the whole
+                    // track. Tapping somewhere else on the track
+                    // does nothing -- the user must grab the thumb
+                    // and drag it. Translation is added to the
+                    // captured-at-start initialValue so we don't
+                    // get compounding drift from reading the live
+                    // (mutating) value.
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged
+                            { drag in
+                                if !isDragging
+                                {
+                                    isDragging   = true
+                                    initialValue = value
+                                    onEditingChanged(true)
+                                }
+                                let deltaPct =
+                                    drag.translation.width
+                                    / max(usableWidth, 1)
+                                let newValue =
+                                    initialValue
+                                    + Double(deltaPct) * span
+                                value = max(range.lowerBound,
+                                            min(range.upperBound,
+                                                newValue))
+                            }
+                            .onEnded
+                            { _ in
+                                isDragging = false
+                                onEditingChanged(false)
+                            }
+                    )
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged
-                    { drag in
-                        if !isDragging
-                        {
-                            isDragging = true
-                            onEditingChanged(true)
-                        }
-                        let centred  = drag.location.x - thumbDiameter / 2
-                        let clamped  = max(0, min(usableWidth, centred))
-                        let pct      = usableWidth > 0 ? clamped / usableWidth : 0
-                        value = range.lowerBound + Double(pct) * span
-                    }
-                    .onEnded
-                    { _ in
-                        isDragging = false
-                        onEditingChanged(false)
-                    }
-            )
+            .frame(maxWidth: .infinity,
+                   maxHeight: .infinity,
+                   alignment: .leading)
         }
         .frame(height: thumbDiameter)
     }

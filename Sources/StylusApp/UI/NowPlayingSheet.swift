@@ -27,11 +27,47 @@ struct NowPlayingSheet: View
     // the handle's white-on-grab fill change for a clear "I have it"
     // affordance, matching the mini-player's handle.
     @State private var isHandleGrabbed: Bool   = false
+    // ScrollView's current vertical scroll offset. Drives the
+    // collapsing artwork at the top of the scroll content: the
+    // artwork shrinks from full size to artworkMinScale over the
+    // first `collapseRange` pt of upward scroll while staying
+    // pinned at the visible top, then -- once fully collapsed --
+    // moves up off-screen with continued scrolling like a normal
+    // scroll-view item. Tracked via a PreferenceKey on the
+    // scroll content's background; see playingView below.
+    @State private var scrollOffset:    CGFloat = 0
 
     // Threshold (pt of downward drag from fully-expanded) past which
     // a release commits to dismissal; below it, the sheet snaps
     // back to fully-expanded.
     static let dismissThreshold: CGFloat = 110
+
+    // Artwork sizing for the collapsing-header effect.
+    private static let artworkFullSize: CGFloat = 320
+    private static let artworkMinScale: CGFloat = 0.25
+    private static var collapseRange:   CGFloat
+    {
+        artworkFullSize * (1 - artworkMinScale)
+    }
+
+    private var artworkScale: CGFloat
+    {
+        let progress = max(0,
+                           min(1, scrollOffset / Self.collapseRange))
+        return 1 - progress * (1 - Self.artworkMinScale)
+    }
+
+    // While the user is in the collapse-range portion of the scroll,
+    // counter-translate the artwork by exactly the scroll amount so
+    // its top stays pinned to the visible top of the scroll area --
+    // it shrinks IN PLACE rather than scrolling up under the title.
+    // After the collapse range, freeze the counter-translate so the
+    // (now small) artwork moves up with continued scrolling like any
+    // other scroll-view item.
+    private var artworkStickyOffset: CGFloat
+    {
+        min(scrollOffset, Self.collapseRange)
+    }
 
     var body: some View
     {
@@ -49,6 +85,13 @@ struct NowPlayingSheet: View
             // rounded corners sit beneath the status bar / dynamic
             // island when fully expanded, and emerge from behind
             // them as the user drags down.
+            // .ignoresSafeArea(edges: .bottom) only -- the sheet's
+            // top edge stays at the top safe-area inset (just below
+            // the status bar / dynamic island), so the black
+            // backdrop RootView paints behind the sheet shows
+            // through above. Visually: rounded card on a black
+            // backdrop, with the system status bar rendering over
+            // the black instead of over the sheet's gray.
             UnevenRoundedRectangle(
                 cornerRadii: RectangleCornerRadii(
                     topLeading:     24,
@@ -59,7 +102,7 @@ struct NowPlayingSheet: View
                 style: .continuous
             )
             .fill(Color(uiColor: .secondarySystemBackground))
-            .ignoresSafeArea()
+            .ignoresSafeArea(edges: .bottom)
 
             if let track = audio.currentTrack
             {
@@ -185,45 +228,149 @@ struct NowPlayingSheet: View
     {
         VStack(spacing: 0)
         {
-            // Non-scrolling top section -- handle + artwork. The drag
-            // gesture is attached here so that anywhere above the bottom
-            // edge of the album art is a valid swipe-down-to-dismiss
-            // region. Pulling artwork OUT of the ScrollView is what lets
-            // us own the gesture cleanly: a DragGesture inside a
-            // ScrollView competes with scroll and produces the jittery
-            // grab-and-shake behaviour the user reported earlier.
-            VStack(spacing: 0)
-            {
-                dragHandle
-                artworkView
-                    .padding(.horizontal, 24)
-                    .padding(.top, 4)
-            }
-            .contentShape(Rectangle())
-            .gesture(dismissDrag)
+            // Drag handle stays sticky above the ScrollView so the
+            // user can always grab it for a downward dismiss, even
+            // when they've scrolled the queue.
+            dragHandle
 
-            // Everything below the artwork stays in a ScrollView so the
-            // Up Next list is scrollable. Title / scrubber / transport
-            // are inside the same ScrollView so on smaller screens they
-            // can be reached even when Up Next is long.
-            ScrollView
-            {
-                VStack(spacing: 24)
+            // Single ScrollView holds the artwork + title + scrubber
+            // + transport + Up Next. Dragging the artwork upward
+            // scrolls the queue into view; dragging it downward at
+            // scroll-top dismisses the sheet (downward drags mid-
+            // scroll fall through to the ScrollView's normal scroll
+            // behaviour).
+            ScrollViewReader
+            { scrollProxy in
+                ScrollView
                 {
-                    titleBlock(track)
-                    scrubber
-                    transport
-                    upNext
+                    VStack(spacing: 0)
+                    {
+                        artworkView
+                            // Tagged so onAppear's scrollProxy can
+                            // jump us back here when the sheet is
+                            // re-presented (e.g. user taps the
+                            // mini-bar again, or returns to the app
+                            // via the dynamic island and RootView
+                            // auto-presents).
+                            .id("npTop")
+                            .frame(width:  Self.artworkFullSize,
+                                   height: Self.artworkFullSize)
+                            // Centre the (potentially-shrunken) artwork
+                            // horizontally within the available width.
+                            .frame(maxWidth: .infinity,
+                                   alignment: .center)
+                            // anchor: .top means the artwork's top
+                            // edge stays put as it shrinks; the
+                            // bottom rises toward it. Combined with
+                            // the sticky offset below, this keeps
+                            // the artwork pinned at the visible top
+                            // of the scroll while it shrinks from
+                            // full size to artworkMinScale.
+                            .scaleEffect(artworkScale, anchor: .top)
+                            .offset(y: artworkStickyOffset)
+                            // Sized so the distance from the
+                            // sheet's visible top edge (rounded
+                            // corners at safe-area-top) to the
+                            // artwork's top equals the horizontal
+                            // margin (screen edge to artwork edge).
+                            // On iPhone 14/15 Pro at 393 pt wide:
+                            // horizontal margin = (393 - 320) / 2
+                            // = 36.5 pt; drag-handle vertical
+                            // extent = 14 + 5 + 14 = 33 pt; so
+                            // 33 + 4 ≈ 36.5 visually balances top
+                            // and side margins around the artwork.
+                            .padding(.top, 4)
+                            // No gesture on the artwork: even a
+                            // simultaneousGesture with a downward-
+                            // and-scroll-top-only filter blocks
+                            // the ScrollView from receiving upward
+                            // drags as scroll input. Dismiss-by-
+                            // pulling-art-down would need a UIKit
+                            // UIPanGestureRecognizer (via
+                            // UIViewRepresentable) that fails
+                            // itself for upward drags so ScrollView
+                            // can take over -- a future change.
+                            // For now the drag handle owns the
+                            // downward dismiss.
+
+                        VStack(spacing: 24)
+                        {
+                            titleBlock(track)
+                            scrubber
+                            transport
+                            upNext
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.top,        24)
+                        .padding(.bottom,     32)
+                    }
                 }
-                .padding(.horizontal, 24)
-                .padding(.top,        24)
-                .padding(.bottom,     32)
+                // iOS 18+ scroll-geometry tracking. The
+                // GeometryReader-in-background trick that's
+                // standard on iOS 16/17 didn't fire reliably on
+                // this device; this API reports contentOffset
+                // directly. contentOffset.y is 0 at scroll-top and
+                // grows positive as the user scrolls up.
+                .onScrollGeometryChange(for: CGFloat.self)
+                { proxy in
+                    proxy.contentOffset.y
+                }
+                action:
+                { _, newValue in
+                    scrollOffset = max(0, newValue)
+                }
+                // Reset the scroll position when the sheet is
+                // presented. NowPlayingSheet is conditionally
+                // rendered by RootView, so .onAppear fires every
+                // time the sheet mounts (tap, swipe-up, or
+                // RootView's scenePhase auto-present on return
+                // from background -- the dynamic-island re-entry
+                // case the user wanted handled).
+                .onAppear
+                {
+                    scrollProxy.scrollTo("npTop", anchor: .top)
+                }
             }
         }
         .task(id: track.filePath)
         {
             artwork = await loadFullArtwork(for: track.filePath)
         }
+    }
+
+    // Downward-drag dismiss on the artwork. Only fires when scroll
+    // is at the top so that dragging-down mid-scroll falls through
+    // to ScrollView's natural scroll-up behaviour. .global coord
+    // space matches the rest of the dismiss gestures in this view.
+    // .simultaneous (not .gesture / .highPriority) lets ScrollView
+    // still receive UPWARD drags as scroll input; we only inspect
+    // and react.
+    private var artworkDismissDrag: some Gesture
+    {
+        DragGesture(minimumDistance: 5, coordinateSpace: .global)
+            .onChanged
+            { value in
+                if value.translation.height > 0 && scrollOffset <= 1
+                {
+                    sheetY = value.translation.height
+                }
+            }
+            .onEnded
+            { value in
+                let dragged = value.translation.height
+                if dragged > Self.dismissThreshold && scrollOffset <= 1
+                {
+                    onDismiss()
+                }
+                else if sheetY > 0
+                {
+                    withAnimation(.spring(response: 0.32,
+                                           dampingFraction: 0.85))
+                    {
+                        sheetY = 0
+                    }
+                }
+            }
     }
 
     @ViewBuilder
@@ -383,7 +530,11 @@ struct NowPlayingSheet: View
             .buttonStyle(SilverCircleButtonStyle(size: 64))
             .disabled(!queue.canAdvance)
         }
-        .padding(.top, 8)
+        // Negative top padding pulls the transport row 8 pt up
+        // toward the scrubber, tightening the visual grouping of
+        // "scrub + control" and putting more breathing room below
+        // the buttons.
+        .padding(.top, -8)
     }
 
     private func format(_ seconds: TimeInterval) -> String
@@ -460,3 +611,4 @@ private struct UpNextRow: View
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
+

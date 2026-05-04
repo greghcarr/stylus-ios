@@ -38,6 +38,8 @@ struct RootView: View
     // under the finger, no constant delta.
     @State private var safeTop: CGFloat = 0
 
+    @Environment(\.scenePhase) private var scenePhase
+
     // Lift threshold (pt of upward drag) past which a release commits
     // to fully-expanded. Below it, the sheet snaps back to the bar.
     private static let liftThreshold: CGFloat = 100
@@ -58,12 +60,35 @@ struct RootView: View
 
             if audio.currentTrack != nil && sheetY < screenH
             {
+                // No backdrop layer behind the sheet -- the
+                // tabsLayer (the active library / artists / etc.
+                // tab) shows through above and around the sheet,
+                // so as the user drags the sheet down they see
+                // their main app emerge from behind it. The status
+                // bar renders over whatever the underlying tab has
+                // there (its own background, navigation chrome,
+                // etc.).
                 NowPlayingSheet(
                     sheetY:    $sheetY,
                     onDismiss: { dismissSheet() }
                 )
                 .offset(y: max(0, sheetY))
-                .zIndex(2)
+                .zIndex(1)
+            }
+        }
+        // Auto-present the Now Playing sheet whenever the app
+        // becomes active and a track is loaded. Covers the typical
+        // "user tapped the dynamic island / lock-screen controls
+        // and was sent to the app" flow. presentSheet() early-
+        // returns when the sheet is already up, so this is also
+        // safe to fire on .inactive → .active transitions (e.g.
+        // user pulled Control Center and dismissed it) -- the
+        // sheet stays where it was rather than re-animating.
+        .onChange(of: scenePhase)
+        { _, newPhase in
+            if newPhase == .active && audio.currentTrack != nil
+            {
+                presentSheet()
             }
         }
         // Custom env key (NOT .environmentObject) so consumers don't
