@@ -1,10 +1,13 @@
 import SwiftUI
 
-// Full-screen sheet presented when the user taps the TransportBar's art /
-// title region. Shows large artwork, the track's title block, a seekable
-// scrubber, and big transport buttons.
+// Full-screen Now Playing surface presented as an overlay (not a system
+// sheet) so the parent RootView can drive an expand-from-bar transition
+// via matchedGeometryEffect. Caller owns dismissal via the onDismiss
+// closure; the close button and drag-down gesture both call it.
 struct NowPlayingSheet: View
 {
+    var onDismiss: () -> Void = {}
+
     @EnvironmentObject var audio: AudioPlayer
     @EnvironmentObject var queue: PlayQueue
 
@@ -14,23 +17,47 @@ struct NowPlayingSheet: View
 
     var body: some View
     {
-        Group
+        ZStack(alignment: .topLeading)
         {
-            if let track = audio.currentTrack
+            Color(uiColor: .systemBackground)
+                .ignoresSafeArea()
+
+            Group
             {
-                playingView(track)
-            }
-            else
-            {
-                VStack
+                if let track = audio.currentTrack
                 {
-                    Spacer()
-                    Text("Nothing playing")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                    Spacer()
+                    playingView(track)
+                }
+                else
+                {
+                    VStack
+                    {
+                        Spacer()
+                        Text("Nothing playing")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
                 }
             }
+
+            // Close affordance in the top-leading corner. The drag-down
+            // gesture below mirrors the sheet's swipe-to-dismiss feel.
+            Button
+            {
+                onDismiss()
+            }
+            label:
+            {
+                Image(systemName: "chevron.down")
+                    .font(.title2.bold())
+                    .foregroundStyle(.secondary)
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 16)
+            .padding(.top,     16)
         }
         .onChange(of: audio.currentTime)
         { newTime in
@@ -40,6 +67,16 @@ struct NowPlayingSheet: View
         { _ in
             sliderValue = audio.currentTime
         }
+        .gesture(
+            DragGesture(minimumDistance: 30)
+                .onEnded
+                { value in
+                    if value.translation.height > 80
+                    {
+                        onDismiss()
+                    }
+                }
+        )
     }
 
     @ViewBuilder
