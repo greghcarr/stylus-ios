@@ -7,13 +7,16 @@ struct StylusApp: App
     @StateObject private var library = LibraryStore()
     @StateObject private var queue:    PlayQueue
     @StateObject private var audio:    AudioPlayer
+    private let nowPlaying:           NowPlayingController
 
     init()
     {
         Stylus_Initialize()
         let q = PlayQueue()
+        let a = AudioPlayer(queue: q)
         _queue = StateObject(wrappedValue: q)
-        _audio = StateObject(wrappedValue: AudioPlayer(queue: q))
+        _audio = StateObject(wrappedValue: a)
+        nowPlaying = NowPlayingController(audio: a)
     }
 
     var body: some Scene

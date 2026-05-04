@@ -130,7 +130,8 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       bottom transport bar, auto-advance on track end
 - [x] **Phase 3b** Full-screen Now Playing sheet (large art, scrubber,
       big transport)
-- [ ] **Phase 3c** `MPNowPlayingInfoCenter` + lock-screen art + remote commands
+- [x] **Phase 3c** `MPNowPlayingInfoCenter` + lock-screen art + remote
+      commands (lock screen, Control Center, AirPods, scrub)
 - [ ] **Phase 4** Sidebar views (Artists / Albums / Playlists / Search)
 - [ ] **Phase 5** Background analysis (BPM / key)
 - [ ] **Phase 6** Apple Music lookup

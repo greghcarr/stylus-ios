@@ -43,6 +43,12 @@ final class AudioPlayer: ObservableObject
     private var scheduleGen: UInt64 = 0
     private var timer:       Timer?
 
+    // External listener (NowPlayingController) hooks this to refresh
+    // MPNowPlayingInfoCenter on every meaningful state change. The system
+    // extrapolates currentTime from (elapsed, rate) so we only fire on
+    // play / pause / resume / stop / seek, not on every timer tick.
+    var onPlaybackStateChanged: (() -> Void)?
+
     private weak var queue: PlayQueue?
 
     init(queue: PlayQueue? = nil)
@@ -88,11 +94,13 @@ final class AudioPlayer: ObservableObject
             currentTrack = track
             isPlaying    = true
             startTimer()
+            onPlaybackStateChanged?()
         }
         catch
         {
             print("AudioPlayer: failed to load \(track.filePath): \(error)")
             currentTrack = nil
+            onPlaybackStateChanged?()
         }
     }
 
@@ -108,6 +116,7 @@ final class AudioPlayer: ObservableObject
         node.pause()
         isPlaying = false
         stopTimer()
+        onPlaybackStateChanged?()
     }
 
     func resume()
@@ -117,6 +126,7 @@ final class AudioPlayer: ObservableObject
         node.play()
         isPlaying = true
         startTimer()
+        onPlaybackStateChanged?()
     }
 
     func stop()
@@ -125,6 +135,7 @@ final class AudioPlayer: ObservableObject
         currentTrack = nil
         currentTime  = 0
         duration     = 0
+        onPlaybackStateChanged?()
     }
 
     private func stopInternal()
@@ -147,6 +158,7 @@ final class AudioPlayer: ObservableObject
         scheduleAndPlay(startFrame: frame)
         if !wasPlaying { node.pause(); isPlaying = false; stopTimer() }
         currentTime = clamped
+        onPlaybackStateChanged?()
     }
 
     func playNext()

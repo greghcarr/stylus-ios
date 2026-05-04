@@ -21,9 +21,11 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
   of view; transport bar pinned above the safe area.
 - Phase 3b (full-screen Now Playing sheet): done. Tap the bar's art / title
   region to lift a sheet with large art, scrubber, and big transport.
-- Phase 3c+ (MPNowPlayingInfoCenter + lock screen + remote commands,
-  sidebar, analysis, Apple Music lookup, playlists, polish): pending.
-  See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
+- Phase 3c (MPNowPlayingInfoCenter + remote commands + lock-screen art):
+  done. Lock screen, Control Center, and AirPods controls drive playback;
+  artwork shows on the lock screen.
+- Phase 4+ (sidebar, analysis, Apple Music lookup, playlists, polish):
+  pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 
 ## Build
 Day-to-day: open `StylusApp.xcodeproj` in Xcode, ⌘R. The Xcode project itself
@@ -65,8 +67,16 @@ stylus-ios/
         AudioPlayer.swift     AVAudioEngine + AVAudioPlayerNode. Auto-advances
                               through the attached PlayQueue on track end;
                               exposes currentTime / duration / isPlaying.
+                              Calls onPlaybackStateChanged after every play /
+                              pause / resume / stop / seek so external
+                              listeners (NowPlayingController) can refresh.
         PlayQueue.swift       Ordered list + currentIndex; advance / goBack /
                               jump / setQueue. Swift-side, not bridged.
+        NowPlayingController.swift Bridges AudioPlayer state to
+                              MPNowPlayingInfoCenter + registers
+                              MPRemoteCommandCenter handlers. Lock-screen,
+                              Control Center, AirPods, future CarPlay all
+                              drive the same playback.
       Library/
         Track.swift           Swift value type bridging from StylusTrackC.
         LibraryStore.swift    ObservableObject. Owns the C library handle,
@@ -189,6 +199,29 @@ Per-track playback flow:
 frame so `lastRenderTime` resets and the offset arithmetic stays right.
 Pause keeps the buffer scheduled, so `node.play()` resumes seamlessly
 without rescheduling.
+
+### Now Playing center + remote commands
+[NowPlayingController.swift](Sources/StylusApp/Audio/NowPlayingController.swift)
+is constructed once in [StylusApp.swift](Sources/StylusApp/StylusApp.swift)
+with a reference to the `AudioPlayer`. It hooks
+`AudioPlayer.onPlaybackStateChanged` (a single closure, not Combine, so
+there's only one source of truth for "something playback-relevant
+happened") and on every fire writes a fresh
+`MPNowPlayingInfoCenter.default().nowPlayingInfo` dictionary with title /
+artist / album / duration / elapsed / rate. Once track-changes happen,
+it kicks an async `loadArtwork(for:)` off the cache and merges
+`MPMediaItemArtwork` into the info dict. If the artwork is already in
+the cache (typical when the user just looked at the row), it's attached
+synchronously to avoid the lock-screen "no art then art" flicker.
+
+We don't push on every `currentTime` tick: the system extrapolates
+elapsed from the last (elapsed, rate) pair we set, so play / pause /
+seek transitions are sufficient.
+
+The same controller registers `MPRemoteCommandCenter` handlers
+(play / pause / togglePlayPause / next / prev / changePlaybackPosition)
+that route into `AudioPlayer`, so lock-screen, Control Center, AirPods,
+and (eventually, Phase X) CarPlay all drive the same audio engine.
 
 ### Album art loading
 [Sources/StylusApp/Library/ArtworkCache.swift](Sources/StylusApp/Library/ArtworkCache.swift)
