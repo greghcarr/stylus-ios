@@ -26,11 +26,18 @@ struct AlbumsView: View
                     AlbumRow(key: key,
                              representativePath: representativePath(for: key))
                 }
+                // Pin the row separator's leading edge to the cell's
+                // leading edge (same as the Library tab) so it lines
+                // up with the album-thumb's left side instead of
+                // SwiftUI's default content-derived inset.
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
-        .navigationTitle("Albums")
+        .listSectionSeparator(.hidden, edges: .top)
+        .tabTitleMenu("Albums")
+        .libraryActionsToolbar()
         .navigationDestination(for: AlbumKey.self)
         { key in
             AlbumDetailView(key: key)
@@ -146,6 +153,7 @@ struct AlbumDetailView: View
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
+        .listSectionSeparator(.hidden, edges: .top)
         .navigationTitle(key.album)
         .navigationBarTitleDisplayMode(.inline)
     }

@@ -1,161 +1,45 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// Library tab: flat list of every scanned music track (podcasts excluded
-// when a separate podcasts folder is configured). Other surfaces (Artists,
-// Albums, Podcasts, Search) are separate views in the parent RootView's
-// TabView.
+// All Music tab: flat list of every scanned music track (podcasts
+// excluded when a separate podcasts folder is configured). Other
+// surfaces (Artists, Albums, Podcasts, Search) are separate views
+// in the parent RootView's TabView.
 //
-// Wrapped in a NavigationStack by RootView. The persistent TransportBar
-// and the NowPlayingSheet live at the RootView level so every tab shares
-// them.
+// Wrapped in a NavigationStack by RootView. The persistent
+// TransportBar and the NowPlayingSheet live at the RootView level
+// so every tab shares them. The trailing overflow menu (rescan /
+// change folder / analyse / look up) lives in the shared
+// .libraryActionsToolbar() modifier in LibraryActionsToolbar.swift.
 struct LibraryListView: View
 {
     @EnvironmentObject var library:  LibraryStore
     @EnvironmentObject var folder:   MusicFolderStore
-    @EnvironmentObject var analysis: AnalysisController
-    @EnvironmentObject var lookup:   LookupController
 
-    @State private var showMusicPicker:   Bool = false
-    @State private var showPodcastPicker: Bool = false
+    // Drives the empty-state "Choose Music Folder…" button shown
+    // when no music folder has been picked yet. The shared
+    // .libraryActionsToolbar() modifier handles the toolbar's
+    // "Change music folder…" menu item with its own state and its
+    // own fileImporter, so this is intentionally separate.
+    @State private var showMusicPicker: Bool = false
 
     var body: some View
     {
         content
-            .navigationTitle("Library")
-            .toolbar { toolbar }
+            .tabTitleMenu("All Songs")
+            .libraryActionsToolbar()
             .fileImporter(
-                isPresented: $showMusicPicker,
+                isPresented:         $showMusicPicker,
                 allowedContentTypes: [.folder]
             )
             { result in
                 if case .success(let url) = result
                 {
                     folder.setMusic(url: url)
-                    rescan()
+                    library.scan(music:   folder.musicFolderURL,
+                                 podcast: folder.podcastFolderURL)
                 }
             }
-            .fileImporter(
-                isPresented: $showPodcastPicker,
-                allowedContentTypes: [.folder]
-            )
-            { result in
-                if case .success(let url) = result
-                {
-                    folder.setPodcast(url: url)
-                    rescan()
-                }
-            }
-    }
-
-    private func rescan()
-    {
-        library.scan(music: folder.musicFolderURL,
-                     podcast: folder.podcastFolderURL)
-    }
-
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent
-    {
-        ToolbarItem(placement: .topBarTrailing)
-        {
-            if library.isScanning
-            {
-                ProgressView()
-            }
-            else if folder.musicFolderURL != nil
-            {
-                Menu
-                {
-                    Button("Rescan") { rescan() }
-
-                    Button("Change music folder…")
-                    {
-                        showMusicPicker = true
-                    }
-
-                    if folder.podcastFolderURL != nil
-                    {
-                        Button("Change podcasts folder…")
-                        {
-                            showPodcastPicker = true
-                        }
-                        Button(role: .destructive)
-                        {
-                            folder.clearPodcast()
-                            rescan()
-                        }
-                        label:
-                        {
-                            Label("Remove podcasts folder",
-                                  systemImage: "minus.circle")
-                        }
-                    }
-                    else
-                    {
-                        Button
-                        {
-                            showPodcastPicker = true
-                        }
-                        label:
-                        {
-                            Label("Choose podcasts folder…",
-                                  systemImage: "mic.badge.plus")
-                        }
-                    }
-
-                    Divider()
-
-                    if analysis.isAnalysing
-                    {
-                        Button(role: .destructive) { analysis.cancelAll() }
-                        label:
-                        {
-                            Label("Stop analysing (\(analysis.queueDepth) left)",
-                                  systemImage: "stop.circle")
-                        }
-                    }
-                    else
-                    {
-                        Button { analysis.enqueueUnanalysed(library.tracks) }
-                        label:
-                        {
-                            Label("Analyse library", systemImage: "waveform")
-                        }
-                    }
-
-                    if lookup.inProgress
-                    {
-                        Button(role: .destructive) { lookup.cancelAll() }
-                        label:
-                        {
-                            Label("Stop lookup (\(lookup.queueDepth) left)",
-                                  systemImage: "stop.circle")
-                        }
-                    }
-                    else
-                    {
-                        Button { lookup.enqueueAllArtOnly(library.tracks) }
-                        label:
-                        {
-                            Label("Look up missing artwork",
-                                  systemImage: "photo.on.rectangle.angled")
-                        }
-                    }
-                }
-                label:
-                {
-                    if analysis.isAnalysing || lookup.inProgress
-                    {
-                        ProgressView().controlSize(.small)
-                    }
-                    else
-                    {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -187,6 +71,10 @@ struct LibraryListView: View
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
+        // Hide the implicit section's top separator -- the thin line
+        // above the first row that SwiftUI's plain list draws by
+        // default.
+        .listSectionSeparator(.hidden, edges: .top)
     }
 
     // Wraps an empty-state block so it lands at the horizontal centre of

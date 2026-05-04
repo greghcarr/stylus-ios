@@ -8,18 +8,13 @@ struct SearchView: View
 
     var body: some View
     {
-        List
-        {
-            ForEach(matches)
-            { track in
-                TrackRowButton(track: track, visibleTracks: matches)
-            }
-            TransportBarBottomSpacer()
-        }
-        .listStyle(.plain)
-        .navigationTitle("Search")
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
-        .overlay
+        // Branch the body instead of using `.overlay` on the List: a
+        // List overlay's frame is constrained by the list's section
+        // insets, so an "empty state" rendered there ends up offset
+        // from the screen's centre. Returning the EmptyStateView at
+        // the NavigationStack level lets it fill the full frame and
+        // centre horizontally + vertically as intended.
+        Group
         {
             if query.isEmpty
             {
@@ -32,7 +27,23 @@ struct SearchView: View
                 EmptyStateView(title: "No results for \"\(query)\"",
                                systemImage: "magnifyingglass")
             }
+            else
+            {
+                List
+                {
+                    ForEach(matches)
+                    { track in
+                        TrackRowButton(track: track, visibleTracks: matches)
+                    }
+                    TransportBarBottomSpacer()
+                }
+                .listStyle(.plain)
+                .listSectionSeparator(.hidden, edges: .top)
+            }
         }
+        .tabTitleMenu("Search")
+        .libraryActionsToolbar()
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
     }
 
     // Plain case-insensitive substring match across title / artist / album.

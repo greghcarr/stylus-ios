@@ -1,17 +1,15 @@
 import SwiftUI
 
-// Top-level chrome. Two layers in a ZStack:
-//   - Tabs layer: TabView (Library / Artists / Albums / Podcasts /
-//     Search) with the persistent TransportBar pinned via
-//     .safeAreaInset(.bottom). The bar is ALWAYS rendered (not
-//     conditional on isExpanded) so its material background never
-//     flickers in/out underneath the Now Playing sheet on collapse;
-//     when expanded the sheet's full-screen frame simply covers it.
-//   - Player card: when isExpanded, NowPlayingSheet renders on top.
-//     matchedGeometryEffect on a shared "playerCard" id, with the bar
-//     as the (always-present) source: on tap or swipe-up the bar's
-//     frame morphs into the full-screen frame, and on collapse it
-//     morphs back. Tabs fade based on the user's drag-down progress.
+// Top-level chrome.
+//
+// The Now Playing sheet's vertical position is owned by ONE state
+// variable, sheetY:
+//   sheetY = 0       → sheet fully expanded (covers screen)
+//   sheetY = screenH → sheet entirely off-screen below the mini-bar
+// Lift drag from the TransportBar and dismiss drag inside the sheet
+// both write to sheetY, so the upward swipe is fully finger-tracking
+// in the same way the downward swipe is. Tap-to-present and the close
+// button just animate sheetY between the two endpoints.
 struct RootView: View
 {
     @EnvironmentObject var folder:  MusicFolderStore
@@ -19,134 +17,178 @@ struct RootView: View
     @EnvironmentObject var queue:   PlayQueue
     @EnvironmentObject var audio:   AudioPlayer
 
-    @Namespace private var nowPlayingNS
-    @State    private var isExpanded:  Bool    = false
-    // Single shared source of truth for the user's drag-to-dismiss.
-    // The sheet's offset and the tabs' fade-in both derive from this
-    // value, so they can never render a frame apart.
-    @State    private var dragOffset:  CGFloat = 0
+    // Start with a large sentinel so the sheet is "off-screen" before
+    // we measure the actual screen height. The background
+    // GeometryReader clamps it to screenH on first appear.
+    // Top-level tab selection lives in a TabRouter so any tab's
+    // toolbar title menu can flip to a different tab without having
+    // to plumb a @Binding through every view. RootView owns the
+    // instance; .environmentObject below makes it visible to every
+    // descendant.
+    @StateObject private var router  = TabRouter()
 
-    private static let expansion = Animation.spring(response: 0.45,
+    @State private var sheetY:  CGFloat = 9999
+    @State private var screenH: CGFloat = 1000
+    // Top safe-area inset captured on appear. The lift gesture
+    // reports the finger's location in global (screen-coords) space,
+    // but sheetY is interpreted relative to the ZStack's frame,
+    // which respects the safe area -- sheetY = 0 places the sheet's
+    // top at safe_area_top. We subtract safeTop when converting from
+    // global location to sheetY so the sheet's top lands exactly
+    // under the finger, no constant delta.
+    @State private var safeTop: CGFloat = 0
+
+    // Lift threshold (pt of upward drag) past which a release commits
+    // to fully-expanded. Below it, the sheet snaps back to the bar.
+    private static let liftThreshold: CGFloat = 100
+
+    private static let expansion = Animation.spring(response: 0.42,
                                                      dampingFraction: 0.86)
+    private static let collapse  = Animation.spring(response: 0.22,
+                                                     dampingFraction: 1.0)
 
     var body: some View
     {
         ZStack
         {
             tabsLayer
-                .opacity(tabsOpacity)
-                .allowsHitTesting(!isExpanded)
+                // Block taps on tabs once the sheet is more than half
+                // visible so its content captures the touches.
+                .allowsHitTesting(sheetY > screenH * 0.5)
 
-            if isExpanded
+            if audio.currentTrack != nil && sheetY < screenH
             {
                 NowPlayingSheet(
-                    dragOffset: $dragOffset,
-                    onDismiss:  { collapse() }
+                    sheetY:    $sheetY,
+                    onDismiss: { dismissSheet() }
                 )
-                // isSource: true while expanded means the sheet's natural
-                // full-screen frame is the published anchor; the bar
-                // (isSource: false) flips to consumer and animates its
-                // matched frame to the sheet during transition. Without
-                // toggling isSource, SwiftUI would peg the sheet's frame
-                // to the bar's frame permanently and the sheet would
-                // render at bar size in the wrong place.
-                .matchedGeometryEffect(id:       "playerCard",
-                                       in:       nowPlayingNS,
-                                       anchor:   .bottom,
-                                       isSource: true)
+                .offset(y: max(0, sheetY))
                 .zIndex(2)
             }
         }
-        .animation(Self.expansion, value: isExpanded)
-    }
-
-    private var tabsOpacity: Double
-    {
-        if !isExpanded { return 1 }
-        // While expanded, fade the tabs IN as the user drags the sheet
-        // toward dismissal: 0 at rest, 1 when the drag reaches the
-        // dismiss threshold.
-        return Double(min(dragOffset / NowPlayingSheet.dismissThreshold, 1))
+        // Custom env key (NOT .environmentObject) so consumers don't
+        // subscribe to the router's @Published current. See the
+        // explanation above the TabRouter declaration in
+        // TabNavigation.swift.
+        .environment(\.tabRouter, router)
+        // Background GeometryReader captures screen height + bottom
+        // safe area so we know how far the sheet has to travel to be
+        // fully off-screen. Doesn't affect layout (Color.clear).
+        .background
+        {
+            GeometryReader
+            { geo in
+                Color.clear
+                    .onAppear
+                    {
+                        let H = geo.size.height + geo.safeAreaInsets.bottom
+                        screenH = H
+                        safeTop = geo.safeAreaInsets.top
+                        if sheetY > H { sheetY = H }
+                    }
+                    .onChange(of: geo.size.height)
+                    { _ in
+                        let H = geo.size.height + geo.safeAreaInsets.bottom
+                        // If the sheet was at rest off-screen, follow
+                        // the new H. Otherwise leave it where it is so
+                        // an in-progress drag isn't disturbed.
+                        if abs(sheetY - screenH) < 1 { sheetY = H }
+                        screenH = H
+                        safeTop = geo.safeAreaInsets.top
+                    }
+            }
+        }
     }
 
     private var tabsLayer: some View
     {
-        TabView
+        // TabView is kept (not replaced with a switch) so each tab's
+        // NavigationStack preserves its drill-down state across
+        // switches -- the user's scroll position, pushed detail
+        // views, search query, etc. all survive flipping tabs from
+        // the title menu. The system tab bar is hidden via
+        // .toolbar(.hidden, for: .tabBar) on each tab's content,
+        // since navigation now happens through the title-menu
+        // chevron at the top of each tab.
+        VStack(spacing: 0)
         {
-            NavigationStack { LibraryListView() }
-                .withTransportBar(namespace:  nowPlayingNS,
-                                  isExpanded: isExpanded,
-                                  onPresent:  { expand() })
-                .tabItem { Label("Library", systemImage: "music.note.list") }
-
-            NavigationStack { ArtistsView() }
-                .withTransportBar(namespace:  nowPlayingNS,
-                                  isExpanded: isExpanded,
-                                  onPresent:  { expand() })
-                .tabItem { Label("Artists", systemImage: "music.mic") }
-
-            NavigationStack { AlbumsView() }
-                .withTransportBar(namespace:  nowPlayingNS,
-                                  isExpanded: isExpanded,
-                                  onPresent:  { expand() })
-                .tabItem { Label("Albums", systemImage: "square.stack") }
-
-            if folder.podcastFolderURL != nil
+            TabView(selection: $router.current)
             {
-                NavigationStack { PodcastsView() }
-                    .withTransportBar(namespace:  nowPlayingNS,
-                                      isExpanded: isExpanded,
-                                      onPresent:  { expand() })
-                    .tabItem { Label("Podcasts", systemImage: "mic") }
+                NavigationStack { LibraryListView() }
+                    .safeAreaInset(edge: .bottom) { transportBar }
+                    .toolbar(.hidden, for: .tabBar)
+                    .tag(AppTab.library)
+
+                NavigationStack { ArtistsView() }
+                    .safeAreaInset(edge: .bottom) { transportBar }
+                    .toolbar(.hidden, for: .tabBar)
+                    .tag(AppTab.artists)
+
+                NavigationStack { AlbumsView() }
+                    .safeAreaInset(edge: .bottom) { transportBar }
+                    .toolbar(.hidden, for: .tabBar)
+                    .tag(AppTab.albums)
+
+                if folder.podcastFolderURL != nil
+                {
+                    NavigationStack { PodcastsView() }
+                        .safeAreaInset(edge: .bottom) { transportBar }
+                        .toolbar(.hidden, for: .tabBar)
+                        .tag(AppTab.podcasts)
+                }
+
+                NavigationStack { SearchView() }
+                    .safeAreaInset(edge: .bottom) { transportBar }
+                    .toolbar(.hidden, for: .tabBar)
+                    .tag(AppTab.search)
             }
-
-            NavigationStack { SearchView() }
-                .withTransportBar(namespace:  nowPlayingNS,
-                                  isExpanded: isExpanded,
-                                  onPresent:  { expand() })
-                .tabItem { Label("Search", systemImage: "magnifyingglass") }
         }
     }
 
-    private func expand()
+    private var transportBar: some View
     {
-        withAnimation(Self.expansion) { isExpanded = true }
+        TransportBar(
+            onTap:      { presentSheet() },
+            onLiftDrag: { y   in liftDragChanged(locationY: y) },
+            onLiftEnd:  { dy  in liftDragEnded(translationHeight: dy) }
+        )
     }
 
-    private func collapse()
+    private func presentSheet()
     {
-        withAnimation(Self.expansion)
+        // Snap to off-screen first (no animation) so the spring has
+        // somewhere to start from in case the user re-tapped right
+        // after a partial drag.
+        if sheetY < screenH * 0.5 { return }
+        sheetY = screenH
+        withAnimation(Self.expansion) { sheetY = 0 }
+    }
+
+    private func dismissSheet()
+    {
+        withAnimation(Self.collapse) { sheetY = screenH }
+    }
+
+    private func liftDragChanged(locationY: CGFloat)
+    {
+        // locationY is the finger's current Y in global (screen)
+        // coords. Subtract safeTop to convert to the sheet's local
+        // offset reference (sheetY = 0 places the sheet's top at
+        // safe_area_top). With this, sheet's top tracks finger.y
+        // exactly -- pull up from anywhere on the bar and the
+        // sheet's top is right under the finger.
+        sheetY = min(screenH, max(0, locationY - safeTop))
+    }
+
+    private func liftDragEnded(translationHeight: CGFloat)
+    {
+        if translationHeight < -Self.liftThreshold
         {
-            isExpanded = false
-            dragOffset = 0
+            withAnimation(Self.expansion) { sheetY = 0 }
         }
-    }
-}
-
-private extension View
-{
-    // The TransportBar is always rendered in the bottom safe-area
-    // inset, even while the player is expanded. That guarantees its
-    // regularMaterial background is continuously present underneath
-    // the sheet, so the moment the sheet's matched-geometry collapse
-    // ends there's no transparent frame between them.
-    //
-    // isSource flips with isExpanded so that whichever view is
-    // "showing" claims its natural frame as the matched-geometry
-    // anchor. While collapsed: bar is source. While expanded: sheet
-    // is source (set in the parent body). The other side animates its
-    // matched frame to the new source during transitions.
-    func withTransportBar(namespace:  Namespace.ID,
-                          isExpanded: Bool,
-                          onPresent:  @escaping () -> Void) -> some View
-    {
-        safeAreaInset(edge: .bottom)
+        else
         {
-            TransportBar(onTap: onPresent)
-                .matchedGeometryEffect(id:       "playerCard",
-                                       in:       namespace,
-                                       anchor:   .bottom,
-                                       isSource: !isExpanded)
+            withAnimation(Self.collapse) { sheetY = screenH }
         }
     }
 }

@@ -25,7 +25,9 @@ struct ArtistsView: View
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
-        .navigationTitle("Artists")
+        .listSectionSeparator(.hidden, edges: .top)
+        .tabTitleMenu("Artists")
+        .libraryActionsToolbar()
         .navigationDestination(for: String.self)
         { artist in
             ArtistDetailView(artist: artist)
@@ -77,6 +79,7 @@ struct ArtistDetailView: View
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
+        .listSectionSeparator(.hidden, edges: .top)
         .navigationTitle(artist)
         .navigationBarTitleDisplayMode(.inline)
     }

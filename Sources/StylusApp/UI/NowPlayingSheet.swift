@@ -6,11 +6,14 @@ import SwiftUI
 // closure; the close button and drag-down gesture both call it.
 struct NowPlayingSheet: View
 {
-    @Binding var dragOffset: CGFloat   // owned by RootView so the sheet's
-                                       // offset and the tabs' fade-in
-                                       // derive from one shared source.
-
-    var onDismiss: () -> Void = {}
+    // Shared with RootView. The dismiss-drag gesture inside the
+    // sheet writes directly to this so the same value drives both
+    // the upward lift drag from the bar and the downward dismiss
+    // drag in the sheet -- one source of truth, finger-tracking in
+    // both directions. The sheet's vertical .offset is applied by
+    // RootView from this binding, NOT here.
+    @Binding var sheetY:    CGFloat
+    var       onDismiss:    () -> Void = {}
 
     @EnvironmentObject var audio: AudioPlayer
     @EnvironmentObject var queue: PlayQueue
@@ -18,45 +21,66 @@ struct NowPlayingSheet: View
     @State private var artwork:         UIImage?
     @State private var sliderValue:     Double = 0
     @State private var userIsScrubbing: Bool   = false
+    // True while the user is actively gripping the drag handle at
+    // the top of the sheet (NOT while they're dragging the artwork
+    // region, which uses dismissDrag and leaves this alone). Drives
+    // the handle's white-on-grab fill change for a clear "I have it"
+    // affordance, matching the mini-player's handle.
+    @State private var isHandleGrabbed: Bool   = false
 
-    // Threshold at which a drag-down release commits to dismissal; below
-    // that, the sheet snaps back. Same scale used to compute tab fade-in.
+    // Threshold (pt of downward drag from fully-expanded) past which
+    // a release commits to dismissal; below it, the sheet snaps
+    // back to fully-expanded.
     static let dismissThreshold: CGFloat = 110
 
     var body: some View
     {
         ZStack(alignment: .top)
         {
-            Color(uiColor: .systemBackground)
-                .ignoresSafeArea()
+            // Match the mini-player TransportBar's frosted gray + its
+            // 24 pt top-corner radius. The bar uses
+            // .regularMaterial; the closest opaque equivalent for
+            // a full-screen sheet is .secondarySystemBackground.
+            // Top-corner radii of 24 (matching TransportBar) make
+            // the sheet's top edge curve the same way as the bar's
+            // when the user drags the sheet down. .ignoresSafeArea
+            // extends the rectangle into all safe areas so the
+            // sheet still covers the full screen at rest -- the
+            // rounded corners sit beneath the status bar / dynamic
+            // island when fully expanded, and emerge from behind
+            // them as the user drags down.
+            UnevenRoundedRectangle(
+                cornerRadii: RectangleCornerRadii(
+                    topLeading:     24,
+                    bottomLeading:   0,
+                    bottomTrailing:  0,
+                    topTrailing:    24
+                ),
+                style: .continuous
+            )
+            .fill(Color(uiColor: .secondarySystemBackground))
+            .ignoresSafeArea()
 
-            Group
+            if let track = audio.currentTrack
             {
-                if let track = audio.currentTrack
+                playingView(track)
+            }
+            else
+            {
+                VStack
                 {
-                    playingView(track)
-                }
-                else
-                {
-                    VStack
-                    {
-                        Spacer()
-                        Text("Nothing playing")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
+                    dragHandle
+                    Spacer()
+                    Text("Nothing playing")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
                 }
             }
-
-            // Drag handle at the very top: tap to dismiss, drag down to
-            // shrink. Putting the gesture HERE (not on the whole sheet)
-            // means the ScrollView's own scroll gesture wins below the
-            // handle, so the user can scroll Up Next without the sheet
-            // following their finger.
-            dragHandle
         }
-        .offset(y: max(0, dragOffset))
+        // No .offset(y:) here on purpose: RootView applies the
+        // shared sheetY translation. Adding one here would stack on
+        // top of the parent's offset and double the drag distance.
         .onChange(of: audio.currentTime)
         { newTime in
             if !userIsScrubbing { sliderValue = newTime }
@@ -67,63 +91,134 @@ struct NowPlayingSheet: View
         }
     }
 
+    // Single shared drag gesture used by BOTH the top handle area and
+    // the artwork frame so the user can swipe down anywhere above the
+    // bottom edge of the album art. Below the artwork we hand the
+    // gesture pipeline back to the ScrollView so Up Next can scroll.
+    //
+    // Coordinate space MUST be .global. The gesture's host view moves
+    // down by sheetY via RootView's .offset modifier, so a .local
+    // gesture would feed back on itself: as sheetY grows the host's
+    // local origin shifts down, which shrinks translation, which
+    // shrinks sheetY, which un-shifts the host -- the back-and-forth
+    // vertical jitter the user reported earlier. Reading translation
+    // in screen coordinates breaks that loop because the finger's
+    // absolute position doesn't depend on the view's offset.
+    private var dismissDrag: some Gesture
+    {
+        DragGesture(minimumDistance: 5, coordinateSpace: .global)
+            .onChanged
+            { value in
+                // While at fully-expanded rest, downward translation
+                // pulls the sheet down. Negative translations would
+                // try to push it above the screen top, which we
+                // disallow by clamping at 0.
+                sheetY = max(0, value.translation.height)
+            }
+            .onEnded
+            { value in
+                if value.translation.height > Self.dismissThreshold
+                {
+                    onDismiss()
+                }
+                else
+                {
+                    withAnimation(.spring(response: 0.32,
+                                           dampingFraction: 0.85))
+                    {
+                        sheetY = 0
+                    }
+                }
+            }
+    }
+
     @ViewBuilder
     private var dragHandle: some View
     {
-        VStack(spacing: 0)
-        {
-            Capsule()
-                .fill(Color.secondary.opacity(0.55))
-                .frame(width: 44, height: 5)
-                // Generous transparent padding so the touch target is
-                // ~80 pt tall x most-of-the-screen wide; the visible pill
-                // stays small.
-                .padding(.vertical, 14)
-                .padding(.horizontal, 100)
-                .contentShape(Rectangle())
-                .onTapGesture { onDismiss() }
-                .gesture(
-                    DragGesture(minimumDistance: 5)
-                        .onChanged
-                        { value in
-                            dragOffset = max(0, value.translation.height)
-                        }
-                        .onEnded
-                        { value in
-                            if value.translation.height > Self.dismissThreshold
-                            {
-                                onDismiss()
-                            }
-                            else
-                            {
-                                withAnimation(.spring(response: 0.32,
-                                                       dampingFraction: 0.85))
-                                {
-                                    dragOffset = 0
-                                }
-                            }
-                        }
-                )
-            Spacer()
-        }
+        Capsule()
+            .fill(isHandleGrabbed ? Color.white
+                                  : Color.secondary.opacity(0.55))
+            .frame(width: 44, height: 5)
+            // Generous transparent padding so the touch target is
+            // ~80 pt tall x most-of-the-screen wide; the visible pill
+            // stays small.
+            .padding(.vertical, 14)
+            .padding(.horizontal, 100)
+            .contentShape(Rectangle())
+            .onTapGesture { onDismiss() }
+            .gesture(handleDrag)
+            .animation(.easeOut(duration: 0.15), value: isHandleGrabbed)
+    }
+
+    // Same shape as dismissDrag but flips isHandleGrabbed on the
+    // way in / out so the handle visually responds to the grab.
+    // Kept separate from dismissDrag (used by the artwork region)
+    // so dragging the artwork doesn't recolour the handle.
+    private var handleDrag: some Gesture
+    {
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged
+            { value in
+                if !isHandleGrabbed { isHandleGrabbed = true }
+                sheetY = max(0, value.translation.height)
+            }
+            .onEnded
+            { value in
+                isHandleGrabbed = false
+                if value.translation.height > Self.dismissThreshold
+                {
+                    onDismiss()
+                }
+                else
+                {
+                    withAnimation(.spring(response: 0.32,
+                                           dampingFraction: 0.85))
+                    {
+                        sheetY = 0
+                    }
+                }
+            }
     }
 
     @ViewBuilder
     private func playingView(_ track: Track) -> some View
     {
-        ScrollView
+        VStack(spacing: 0)
         {
-            VStack(spacing: 24)
+            // Non-scrolling top section -- handle + artwork. The drag
+            // gesture is attached here so that anywhere above the bottom
+            // edge of the album art is a valid swipe-down-to-dismiss
+            // region. Pulling artwork OUT of the ScrollView is what lets
+            // us own the gesture cleanly: a DragGesture inside a
+            // ScrollView competes with scroll and produces the jittery
+            // grab-and-shake behaviour the user reported earlier.
+            VStack(spacing: 0)
             {
+                dragHandle
                 artworkView
-                titleBlock(track)
-                scrubber
-                transport
-                upNext
+                    .padding(.horizontal, 24)
+                    .padding(.top, 4)
             }
-            .padding(.horizontal, 24)
-            .padding(.top,        32)
-            .padding(.bottom,     32)
+            .contentShape(Rectangle())
+            .gesture(dismissDrag)
+
+            // Everything below the artwork stays in a ScrollView so the
+            // Up Next list is scrollable. Title / scrubber / transport
+            // are inside the same ScrollView so on smaller screens they
+            // can be reached even when Up Next is long.
+            ScrollView
+            {
+                VStack(spacing: 24)
+                {
+                    titleBlock(track)
+                    scrubber
+                    transport
+                    upNext
+                }
+                .padding(.horizontal, 24)
+                .padding(.top,        24)
+                .padding(.bottom,     32)
+            }
         }
         .task(id: track.filePath)
         {
@@ -252,41 +347,42 @@ struct NowPlayingSheet: View
     @ViewBuilder
     private var transport: some View
     {
+        // Same SilverCircleButtonStyle as the mini-player TransportBar
+        // for visual consistency with the app icon and the desktop's
+        // transport disc. Larger circle / glyph sizes here because the
+        // expanded sheet has the room to feel weighty.
         HStack(spacing: 40)
         {
             Button { audio.playPrev() }
             label:
             {
                 Image(systemName: "backward.end.fill")
-                    .font(.system(size: 32))
-                    .frame(width: 48, height: 48)
+                    .font(.system(size: 26))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SilverCircleButtonStyle(size: 64))
 
             Button { audio.togglePlayPause() }
             label:
             {
-                // Fixed frame keeps the surrounding skip / back buttons
-                // from shifting horizontally when the icon swaps between
-                // play.fill and pause.fill (different glyph widths).
                 Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 56))
-                    .frame(width: 64, height: 64)
+                    .font(.system(size: 36))
+                    // Fixed frame keeps the play / pause glyph from
+                    // shifting horizontally inside the silver circle
+                    // as the icon name swaps (different glyph widths).
+                    .frame(width: 40, height: 40)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SilverCircleButtonStyle(size: 84))
 
             Button { audio.playNext() }
             label:
             {
                 Image(systemName: "forward.end.fill")
-                    .font(.system(size: 32))
-                    .frame(width: 48, height: 48)
+                    .font(.system(size: 26))
                     .opacity(queue.canAdvance ? 1.0 : 0.35)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SilverCircleButtonStyle(size: 64))
             .disabled(!queue.canAdvance)
         }
-        .foregroundStyle(.primary)
         .padding(.top, 8)
     }
 

@@ -24,11 +24,18 @@ struct PodcastsView: View
                             .foregroundStyle(.secondary)
                     }
                 }
+                // Pin the row separator's leading edge to the cell's
+                // leading edge (same as the Library tab) so it lines
+                // up with the show icon's left side instead of
+                // SwiftUI's default content-derived inset.
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
-        .navigationTitle("Podcasts")
+        .listSectionSeparator(.hidden, edges: .top)
+        .tabTitleMenu("Podcasts")
+        .libraryActionsToolbar()
         .navigationDestination(for: String.self)
         { show in
             PodcastDetailView(show: show)
@@ -80,6 +87,7 @@ struct PodcastDetailView: View
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
+        .listSectionSeparator(.hidden, edges: .top)
         .navigationTitle(show)
         .navigationBarTitleDisplayMode(.inline)
     }
