@@ -67,10 +67,12 @@ struct TransportBar: View
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
             // Curve the top corners so the bar visually nests into the
-            // iPhone's screen bottom curve. Bottom corners stay square so
-            // the bar tucks flush against the system tab bar above the
-            // safe area.
-            .background(
+            // iPhone's screen bottom curve. Material extends past the
+            // bar's frame into the bottom safe area (where the system tab
+            // bar lives) so the two read as a single continuous frosted
+            // surface.
+            .background(alignment: .top)
+            {
                 UnevenRoundedRectangle(
                     cornerRadii: RectangleCornerRadii(
                         topLeading:     24,
@@ -81,7 +83,8 @@ struct TransportBar: View
                     style: .continuous
                 )
                 .fill(.regularMaterial)
-            )
+                .ignoresSafeArea(edges: .bottom)
+            }
             .task(id: track.filePath)
             {
                 artwork = await loadArtwork(for: track.filePath)
