@@ -59,6 +59,21 @@ struct TransportBar: View
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // Simultaneous DragGesture so an upward swipe on the art /
+            // title region also lifts the Now Playing sheet, in addition
+            // to the existing tap-to-open. The 20 pt minimumDistance
+            // keeps quick taps from being interpreted as drags; the
+            // -30 pt threshold filters out incidental finger jitter.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20)
+                    .onEnded
+                    { value in
+                        if value.translation.height < -30
+                        {
+                            onTap()
+                        }
+                    }
+            )
 
             Button { audio.togglePlayPause() }
             label:
