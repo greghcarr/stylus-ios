@@ -8,6 +8,8 @@
 #include <juce_events/juce_events.h>
 #include <juce_core/juce_core.h>
 
+#include <climits>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -74,12 +76,25 @@ struct StylusLibrary
 namespace
 {
 
+// Resolves symlinks and normalises so /var/mobile/... and the equivalent
+// /private/var/mobile/... compare equal. iOS security-scoped bookmark URLs
+// alternate between the two forms across launches, so a literal string
+// comparison would reject the cache on every relaunch.
+juce::String canonicalPath (const juce::File& f)
+{
+    char buf[PATH_MAX] = {0};
+    const auto path = f.getFullPathName();
+    if (::realpath (path.toRawUTF8(), buf) != nullptr)
+        return juce::String (juce::CharPointer_UTF8 (buf));
+    return path;
+}
+
 bool foldersMatch (const std::vector<juce::File>& a,
                    const std::vector<juce::File>& b)
 {
     if (a.size() != b.size()) return false;
     for (size_t i = 0; i < a.size(); ++i)
-        if (a[i].getFullPathName() != b[i].getFullPathName())
+        if (canonicalPath (a[i]) != canonicalPath (b[i]))
             return false;
     return true;
 }
@@ -131,10 +146,20 @@ int32_t Stylus_LibraryLoadCache (StylusLibraryHandle handle,
     std::vector<juce::File>        cachedMusicFolders;
     std::vector<juce::File>        cachedPodcastFolders;
     if (! Stylus::LibraryCache::tryLoad (tracks, cachedMusicFolders, cachedPodcastFolders))
+    {
+        juce::Logger::writeToLog ("Stylus_LibraryLoadCache: cache file missing or unparseable");
         return 0;
+    }
 
     if (! foldersMatch (cachedMusicFolders, h->folders))
+    {
+        juce::String msg = "Stylus_LibraryLoadCache: folder mismatch. cached:";
+        for (auto& f : cachedMusicFolders) msg << " [" << f.getFullPathName() << " -> " << canonicalPath (f) << "]";
+        msg << "  current:";
+        for (auto& f : h->folders)         msg << " [" << f.getFullPathName() << " -> " << canonicalPath (f) << "]";
+        juce::Logger::writeToLog (msg);
         return 0;
+    }
 
     int32_t count = 0;
     for (auto& t : tracks)
@@ -144,6 +169,7 @@ int32_t Stylus_LibraryLoadCache (StylusLibraryHandle handle,
         onTrack (&c, userData);
         ++count;
     }
+    juce::Logger::writeToLog (juce::String ("Stylus_LibraryLoadCache: hit, ") + juce::String (count) + " tracks");
     return count;
 }
 
@@ -175,7 +201,10 @@ void Stylus_LibraryStartScan (StylusLibraryHandle handle,
 
     h->scanner.onScanComplete = [h, onDone, userData] (int total)
     {
-        Stylus::LibraryCache::save (h->scanBuffer, h->folders, /*podcastFolders*/ {});
+        const bool ok = Stylus::LibraryCache::save (h->scanBuffer, h->folders, /*podcastFolders*/ {});
+        juce::Logger::writeToLog (juce::String ("LibraryCache::save -> ") + (ok ? "ok" : "FAILED")
+                                  + ", " + juce::String ((int) h->scanBuffer.size()) + " tracks, file: "
+                                  + Stylus::LibraryCache::cacheFile().getFullPathName());
         h->scanBuffer.clear();
         if (onDone != nullptr) onDone (total, userData);
     };
