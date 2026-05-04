@@ -50,6 +50,16 @@ struct CircleSlider: View
                     .overlay(
                         Circle().strokeBorder(Color.black.opacity(0.05), lineWidth: 0.5)
                     )
+                    .overlay
+                    {
+                        Circle()
+                            .fill(Color(uiColor: .systemGray3))
+                            .frame(width: thumbDiameter * 0.42,
+                                   height: thumbDiameter * 0.42)
+                            .scaleEffect(isDragging ? 1.0 : 0.0)
+                            .opacity(isDragging ? 1.0 : 0.0)
+                            .animation(animation, value: isDragging)
+                    }
                     .frame(width: thumbDiameter, height: thumbDiameter)
                     .scaleEffect(isDragging ? thumbScaleActive : 1.0)
                     .shadow(color: .black.opacity(isDragging ? 0.28 : 0.18),
