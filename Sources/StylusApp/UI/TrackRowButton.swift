@@ -23,6 +23,9 @@ struct TrackRowButton: View
                      isPlaying: audio.currentTrack?.filePath == track.filePath)
         }
         .buttonStyle(.plain)
+        // Pin the row separator's leading edge to the cell's leading edge
+        // instead of letting SwiftUI infer it from the album-art column.
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
     }
 
     private func playFromRow()
