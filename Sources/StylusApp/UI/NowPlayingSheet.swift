@@ -6,7 +6,8 @@ import SwiftUI
 // closure; the close button and drag-down gesture both call it.
 struct NowPlayingSheet: View
 {
-    var onDismiss: () -> Void = {}
+    var onDismiss:             () -> Void      = {}
+    var onDragProgressChange:  (CGFloat) -> Void = { _ in }
 
     @EnvironmentObject var audio: AudioPlayer
     @EnvironmentObject var queue: PlayQueue
@@ -14,6 +15,15 @@ struct NowPlayingSheet: View
     @State private var artwork:         UIImage?
     @State private var sliderValue:     Double = 0
     @State private var userIsScrubbing: Bool   = false
+
+    // Tracks the user's finger during a drag-to-dismiss; auto-resets to 0
+    // when the gesture ends (with a spring) so a release-without-dismissal
+    // returns the sheet to its full-screen position smoothly.
+    @GestureState private var dragOffset: CGFloat = 0
+
+    // Threshold at which a drag-down release commits to dismissal; below
+    // that, the sheet snaps back. Same scale used to compute tab fade-in.
+    private static let dismissThreshold: CGFloat = 110
 
     var body: some View
     {
@@ -59,6 +69,7 @@ struct NowPlayingSheet: View
             .padding(.leading, 16)
             .padding(.top,     16)
         }
+        .offset(y: max(0, dragOffset))
         .onChange(of: audio.currentTime)
         { newTime in
             if !userIsScrubbing { sliderValue = newTime }
@@ -67,13 +78,35 @@ struct NowPlayingSheet: View
         { _ in
             sliderValue = audio.currentTime
         }
-        .gesture(
-            DragGesture(minimumDistance: 30)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 12)
+                .updating($dragOffset)
+                { value, state, transaction in
+                    // Only track downward drags. The transaction's spring
+                    // animation runs when the gesture ends and @GestureState
+                    // resets, so a release-without-dismiss snaps back.
+                    state = max(0, value.translation.height)
+                    transaction.animation = .spring(response: 0.32,
+                                                     dampingFraction: 0.85)
+                }
+                .onChanged
+                { value in
+                    let raw      = max(0, value.translation.height)
+                    let progress = min(raw / Self.dismissThreshold, 1)
+                    onDragProgressChange(progress)
+                }
                 .onEnded
                 { value in
-                    if value.translation.height > 80
+                    if value.translation.height > Self.dismissThreshold
                     {
                         onDismiss()
+                    }
+                    else
+                    {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.85))
+                        {
+                            onDragProgressChange(0)
+                        }
                     }
                 }
         )

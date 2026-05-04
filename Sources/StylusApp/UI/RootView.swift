@@ -16,7 +16,11 @@ struct RootView: View
     @EnvironmentObject var audio:   AudioPlayer
 
     @Namespace private var nowPlayingNS
-    @State    private var isExpanded = false
+    @State    private var isExpanded   = false
+    // 0 when the sheet is at rest, → 1 as the user drags it toward
+    // dismissal. Drives a continuous tab-bar fade-in during the drag so
+    // the user sees the destination materialising under their finger.
+    @State    private var dragProgress: CGFloat = 0
 
     private static let expansion = Animation.spring(response: 0.45,
                                                      dampingFraction: 0.86)
@@ -26,19 +30,31 @@ struct RootView: View
         ZStack
         {
             tabsLayer
-                .opacity(isExpanded ? 0 : 1)
+                .opacity(tabsOpacity)
                 .allowsHitTesting(!isExpanded)
 
             if isExpanded
             {
-                NowPlayingSheet(onDismiss: { collapse() })
-                    .matchedGeometryEffect(id: "playerCard",
-                                           in: nowPlayingNS,
-                                           anchor: .bottom)
-                    .zIndex(2)
+                NowPlayingSheet(
+                    onDismiss:            { collapse() },
+                    onDragProgressChange: { dragProgress = $0 }
+                )
+                .matchedGeometryEffect(id: "playerCard",
+                                       in: nowPlayingNS,
+                                       anchor: .bottom)
+                .zIndex(2)
             }
         }
         .animation(Self.expansion, value: isExpanded)
+    }
+
+    private var tabsOpacity: Double
+    {
+        if !isExpanded { return 1 }
+        // While expanded, fade the tabs IN as the user drags the sheet
+        // toward dismissal: 0 at rest, 1 when the drag reaches the
+        // dismiss threshold.
+        return Double(dragProgress)
     }
 
     private var tabsLayer: some View
@@ -87,7 +103,11 @@ struct RootView: View
 
     private func collapse()
     {
-        withAnimation(Self.expansion) { isExpanded = false }
+        withAnimation(Self.expansion)
+        {
+            isExpanded   = false
+            dragProgress = 0
+        }
     }
 }
 

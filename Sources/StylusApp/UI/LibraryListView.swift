@@ -189,24 +189,41 @@ struct LibraryListView: View
         .listStyle(.plain)
     }
 
+    // Wraps an empty-state block so it lands at the horizontal centre of
+    // the screen regardless of the surrounding view's content insets.
+    @ViewBuilder
+    private func centered<C: View>(@ViewBuilder _ content: () -> C) -> some View
+    {
+        HStack(spacing: 0)
+        {
+            Spacer(minLength: 0)
+            content()
+                .padding()
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     @ViewBuilder
     private var chooseFolderState: some View
     {
-        VStack(spacing: 16)
+        centered
         {
-            Image(systemName: "folder.badge.questionmark")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text("Pick your music folder").font(.headline)
-            Text("Choose a folder in iCloud Drive, on this iPhone, or on an external drive. Stylus will scan it and other apps can read the same files.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-            Button("Choose Music Folder…") { showMusicPicker = true }
-                .buttonStyle(.borderedProminent)
+            VStack(spacing: 16)
+            {
+                Image(systemName: "folder.badge.questionmark")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+                Text("Pick your music folder").font(.headline)
+                Text("Choose a folder in iCloud Drive, on this iPhone, or on an external drive. Stylus will scan it and other apps can read the same files.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                Button("Choose Music Folder…") { showMusicPicker = true }
+                    .buttonStyle(.borderedProminent)
+            }
         }
-        .padding()
     }
 
     @ViewBuilder
@@ -214,47 +231,51 @@ struct LibraryListView: View
     {
         if library.isScanning
         {
-            VStack(spacing: 12)
+            centered
             {
-                ProgressView()
-                Text("Scanning…")
-                if library.expectedCount > 0
+                VStack(spacing: 12)
                 {
-                    ProgressView(value: Double(library.scannedCount),
-                                 total: Double(library.expectedCount))
-                        .progressViewStyle(.linear)
-                        .tint(.green)
-                        .frame(width: 240)
-                    Text("\(library.scannedCount) / \(library.expectedCount)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                    ProgressView()
+                    Text("Scanning…")
+                    if library.expectedCount > 0
+                    {
+                        ProgressView(value: Double(library.scannedCount),
+                                     total: Double(library.expectedCount))
+                            .progressViewStyle(.linear)
+                            .tint(.green)
+                            .frame(width: 240)
+                        Text("\(library.scannedCount) / \(library.expectedCount)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
-            .padding()
         }
         else
         {
-            VStack(spacing: 8)
+            centered
             {
-                Image(systemName: "music.note.list")
-                    .font(.largeTitle)
-                    .foregroundStyle(.secondary)
-                Text("No tracks found").font(.headline)
-                if let url = folder.musicFolderURL
+                VStack(spacing: 8)
                 {
-                    Text(url.path)
-                        .font(.caption.monospaced())
+                    Image(systemName: "music.note.list")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                    Text("No tracks found").font(.headline)
+                    if let url = folder.musicFolderURL
+                    {
+                        Text(url.path)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    Text("Add audio files to that folder, then tap Rescan.")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                 }
-                Text("Add audio files to that folder, then tap Rescan.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
             }
-            .padding()
         }
     }
 }

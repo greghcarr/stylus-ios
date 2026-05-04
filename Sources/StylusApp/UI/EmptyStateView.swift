@@ -1,6 +1,10 @@
 import SwiftUI
 
 // iOS-16-compatible stand-in for SwiftUI 17's ContentUnavailableView.
+// Wraps the content in a HStack with Spacers so the message lands at the
+// horizontal centre of the screen instead of the centre of any inset
+// section that contains it (List overlays especially can pin against the
+// section's leading edge instead of the screen's).
 struct EmptyStateView: View
 {
     let title:       String
@@ -16,23 +20,28 @@ struct EmptyStateView: View
 
     var body: some View
     {
-        VStack(spacing: 12)
+        HStack(spacing: 0)
         {
-            Image(systemName: systemImage)
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text(title)
-                .font(.headline)
-            if let message = message
+            Spacer(minLength: 0)
+            VStack(spacing: 12)
             {
-                Text(message)
-                    .font(.subheadline)
+                Image(systemName: systemImage)
+                    .font(.largeTitle)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+                Text(title)
+                    .font(.headline)
+                if let message = message
+                {
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
             }
+            .padding()
+            Spacer(minLength: 0)
         }
-        .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
