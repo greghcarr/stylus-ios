@@ -1,9 +1,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// Library tab: flat list of every scanned track, in the order the scanner
-// emitted them (alphabetical by file path). Other surfaces (Artists,
-// Albums, Search) are separate views in the parent RootView's TabView.
+// Library tab: flat list of every scanned music track (podcasts excluded
+// when a separate podcasts folder is configured). Other surfaces (Artists,
+// Albums, Podcasts, Search) are separate views in the parent RootView's
+// TabView.
 //
 // Wrapped in a NavigationStack by RootView. The persistent TransportBar
 // and the NowPlayingSheet live at the RootView level so every tab shares
@@ -15,7 +16,8 @@ struct LibraryListView: View
     @EnvironmentObject var analysis: AnalysisController
     @EnvironmentObject var lookup:   LookupController
 
-    @State private var showFolderPicker = false
+    @State private var showMusicPicker:   Bool = false
+    @State private var showPodcastPicker: Bool = false
 
     var body: some View
     {
@@ -23,16 +25,33 @@ struct LibraryListView: View
             .navigationTitle("Library")
             .toolbar { toolbar }
             .fileImporter(
-                isPresented: $showFolderPicker,
+                isPresented: $showMusicPicker,
                 allowedContentTypes: [.folder]
             )
             { result in
                 if case .success(let url) = result
                 {
-                    folder.set(url: url)
-                    library.scan(folder: url)
+                    folder.setMusic(url: url)
+                    rescan()
                 }
             }
+            .fileImporter(
+                isPresented: $showPodcastPicker,
+                allowedContentTypes: [.folder]
+            )
+            { result in
+                if case .success(let url) = result
+                {
+                    folder.setPodcast(url: url)
+                    rescan()
+                }
+            }
+    }
+
+    private func rescan()
+    {
+        library.scan(music: folder.musicFolderURL,
+                     podcast: folder.podcastFolderURL)
     }
 
     @ToolbarContentBuilder
@@ -44,25 +63,52 @@ struct LibraryListView: View
             {
                 ProgressView()
             }
-            else if folder.folderURL != nil
+            else if folder.musicFolderURL != nil
             {
                 Menu
                 {
-                    Button("Rescan")
+                    Button("Rescan") { rescan() }
+
+                    Button("Change music folder…")
                     {
-                        if let url = folder.folderURL { library.scan(folder: url) }
+                        showMusicPicker = true
                     }
-                    Button("Change folder…")
+
+                    if folder.podcastFolderURL != nil
                     {
-                        showFolderPicker = true
-                    }
-                    Divider()
-                    if analysis.isAnalysing
-                    {
+                        Button("Change podcasts folder…")
+                        {
+                            showPodcastPicker = true
+                        }
                         Button(role: .destructive)
                         {
-                            analysis.cancelAll()
+                            folder.clearPodcast()
+                            rescan()
                         }
+                        label:
+                        {
+                            Label("Remove podcasts folder",
+                                  systemImage: "minus.circle")
+                        }
+                    }
+                    else
+                    {
+                        Button
+                        {
+                            showPodcastPicker = true
+                        }
+                        label:
+                        {
+                            Label("Choose podcasts folder…",
+                                  systemImage: "mic.badge.plus")
+                        }
+                    }
+
+                    Divider()
+
+                    if analysis.isAnalysing
+                    {
+                        Button(role: .destructive) { analysis.cancelAll() }
                         label:
                         {
                             Label("Stop analysing (\(analysis.queueDepth) left)",
@@ -71,21 +117,16 @@ struct LibraryListView: View
                     }
                     else
                     {
-                        Button
-                        {
-                            analysis.enqueueUnanalysed(library.tracks)
-                        }
+                        Button { analysis.enqueueUnanalysed(library.tracks) }
                         label:
                         {
                             Label("Analyse library", systemImage: "waveform")
                         }
                     }
+
                     if lookup.inProgress
                     {
-                        Button(role: .destructive)
-                        {
-                            lookup.cancelAll()
-                        }
+                        Button(role: .destructive) { lookup.cancelAll() }
                         label:
                         {
                             Label("Stop lookup (\(lookup.queueDepth) left)",
@@ -94,10 +135,7 @@ struct LibraryListView: View
                     }
                     else
                     {
-                        Button
-                        {
-                            lookup.enqueueAllArtOnly(library.tracks)
-                        }
+                        Button { lookup.enqueueAllArtOnly(library.tracks) }
                         label:
                         {
                             Label("Look up missing artwork",
@@ -109,8 +147,6 @@ struct LibraryListView: View
                 {
                     if analysis.isAnalysing || lookup.inProgress
                     {
-                        // iOS 17 has .symbolEffect(.variableColor.iterative);
-                        // a small ProgressView reads similarly on iOS 16.
                         ProgressView().controlSize(.small)
                     }
                     else
@@ -125,27 +161,28 @@ struct LibraryListView: View
     @ViewBuilder
     private var content: some View
     {
-        if folder.folderURL == nil
+        if folder.musicFolderURL == nil
         {
             chooseFolderState
         }
-        else if library.tracks.isEmpty
+        else if library.tracks.contains(where: { !$0.isPodcast })
         {
-            emptyState
+            trackList
         }
         else
         {
-            trackList
+            emptyState
         }
     }
 
     private var trackList: some View
     {
-        List
+        let musicTracks = library.tracks.filter { !$0.isPodcast }
+        return List
         {
-            ForEach(library.tracks)
+            ForEach(musicTracks)
             { track in
-                TrackRowButton(track: track, visibleTracks: library.tracks)
+                TrackRowButton(track: track, visibleTracks: musicTracks)
             }
             TransportBarBottomSpacer()
         }
@@ -166,11 +203,8 @@ struct LibraryListView: View
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
-            Button("Choose Music Folder…")
-            {
-                showFolderPicker = true
-            }
-            .buttonStyle(.borderedProminent)
+            Button("Choose Music Folder…") { showMusicPicker = true }
+                .buttonStyle(.borderedProminent)
         }
         .padding()
     }
@@ -206,7 +240,7 @@ struct LibraryListView: View
                     .font(.largeTitle)
                     .foregroundStyle(.secondary)
                 Text("No tracks found").font(.headline)
-                if let url = folder.folderURL
+                if let url = folder.musicFolderURL
                 {
                     Text(url.path)
                         .font(.caption.monospaced())

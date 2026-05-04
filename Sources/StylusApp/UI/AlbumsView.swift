@@ -50,7 +50,7 @@ struct AlbumsView: View
     {
         var seen: Set<AlbumKey> = []
         var ordered: [AlbumKey] = []
-        for t in library.tracks
+        for t in library.tracks where !t.isPodcast
         {
             guard !t.album.isEmpty else { continue }
             let key = AlbumKey(artist: t.artist, album: t.album)
@@ -153,7 +153,7 @@ struct AlbumDetailView: View
     private var tracks: [Track]
     {
         library.tracks
-            .filter { $0.album == key.album && $0.artist == key.artist }
+            .filter { !$0.isPodcast && $0.album == key.album && $0.artist == key.artist }
             .sorted
             { lhs, rhs in
                 if lhs.trackNumber != rhs.trackNumber

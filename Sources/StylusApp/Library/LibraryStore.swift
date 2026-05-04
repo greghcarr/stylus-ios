@@ -25,14 +25,15 @@ final class LibraryStore: ObservableObject
         if let h = handle { Stylus_LibraryDestroy(h) }
     }
 
-    // Caller is expected to have an active security scope on the URL for the
-    // duration of the scan and any subsequent playback.
-    func scan(folder url: URL)
+    // Caller is expected to have active security scopes on both URLs for
+    // the duration of the scan + subsequent playback.
+    func scan(music: URL?, podcast: URL?)
     {
-        scan(folders: [url.path])
+        scan(musicPaths:   music.map   { [$0.path] } ?? [],
+             podcastPaths: podcast.map { [$0.path] } ?? [])
     }
 
-    func scan(folders: [String])
+    func scan(musicPaths: [String], podcastPaths: [String])
     {
         if let h = handle
         {
@@ -47,8 +48,9 @@ final class LibraryStore: ObservableObject
 
         // Pre-count audio files in parallel so the scanning progress bar can
         // become determinate quickly. The actual scan (which reads metadata)
-        // runs orders of magnitude slower than this enumeration pass.
-        for path in folders
+        // runs orders of magnitude slower than this enumeration pass. We
+        // count music + podcasts so the bar reflects total expected tracks.
+        for path in (musicPaths + podcastPaths)
         {
             let folderURL = URL(fileURLWithPath: path)
             DispatchQueue.global(qos: .userInitiated).async
@@ -62,13 +64,25 @@ final class LibraryStore: ObservableObject
             }
         }
 
-        let owned: [UnsafeMutablePointer<CChar>?] = folders.map { strdup($0) }
-        defer { owned.forEach { if let p = $0 { free(p) } } }
-        var ptrs: [UnsafePointer<CChar>?] = owned.map { $0.map { UnsafePointer($0) } }
+        let musicOwned:   [UnsafeMutablePointer<CChar>?] = musicPaths.map   { strdup($0) }
+        let podcastOwned: [UnsafeMutablePointer<CChar>?] = podcastPaths.map { strdup($0) }
+        defer
+        {
+            musicOwned.forEach   { if let p = $0 { free(p) } }
+            podcastOwned.forEach { if let p = $0 { free(p) } }
+        }
+        var musicPtrs:   [UnsafePointer<CChar>?] = musicOwned.map   { $0.map { UnsafePointer($0) } }
+        var podcastPtrs: [UnsafePointer<CChar>?] = podcastOwned.map { $0.map { UnsafePointer($0) } }
 
-        ptrs.withUnsafeMutableBufferPointer
-        { buf in
-            handle = Stylus_LibraryCreate(buf.baseAddress, Int32(folders.count))
+        musicPtrs.withUnsafeMutableBufferPointer
+        { musicBuf in
+            podcastPtrs.withUnsafeMutableBufferPointer
+            { podcastBuf in
+                handle = Stylus_LibraryCreate(
+                    musicBuf.baseAddress,   Int32(musicPaths.count),
+                    podcastBuf.baseAddress, Int32(podcastPaths.count)
+                )
+            }
         }
 
         let user = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())

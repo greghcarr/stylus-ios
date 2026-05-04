@@ -40,10 +40,15 @@ void Stylus_Initialize(void);
 typedef struct StylusLibrary StylusLibrary;
 typedef StylusLibrary* StylusLibraryHandle;
 
-// Creates a library bound to the given UTF-8 absolute folder paths. Strings
-// are copied; the caller retains ownership. Returns NULL on allocation failure.
+// Creates a library bound to the given music + podcast folder paths
+// (UTF-8 absolute). Either set may be empty. Strings are copied; the caller
+// retains ownership. Returns NULL on allocation failure. Files under any
+// podcast root are excluded from the music scan, so a podcast folder
+// nested inside a music folder doesn't double-up.
 StylusLibraryHandle Stylus_LibraryCreate(const char* const* musicFolders,
-                                         int32_t folderCount);
+                                         int32_t            musicFolderCount,
+                                         const char* const* podcastFolders,
+                                         int32_t            podcastFolderCount);
 
 // Cancels any in-flight scan and frees the handle. Must be called from the
 // main thread; blocks for up to ~3s waiting for the scanner thread to exit.

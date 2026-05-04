@@ -1,13 +1,11 @@
 import SwiftUI
 
-// Top-level chrome: TabView with the four library surfaces, the persistent
-// TransportBar pinned via .safeAreaInset(.bottom) ON EACH TAB rather than
-// on the TabView itself. Applied to the TabView the inset would compete
-// with the system tab bar's slot and the tab bar would get hidden whenever
-// the bar materialised (i.e. as soon as a track was current). Inside each
-// tab the inset sits naturally between the tab content and the tab bar.
-//
-// The NowPlayingSheet presentation sits at this level so any tab can lift
+// Top-level chrome: TabView with Library / Artists / Albums / Search
+// always; Podcasts only when a podcast folder is set. The persistent
+// TransportBar pins via .safeAreaInset(.bottom) on each tab's
+// NavigationStack rather than on the TabView itself, so the bar sits
+// above the system tab bar instead of competing with it. The
+// NowPlayingSheet presentation lives at this level so any tab can lift
 // it via the bar's tap.
 struct RootView: View
 {
@@ -33,6 +31,13 @@ struct RootView: View
             NavigationStack { AlbumsView() }
                 .withTransportBar(showNowPlaying: $showNowPlaying)
                 .tabItem { Label("Albums", systemImage: "square.stack") }
+
+            if folder.podcastFolderURL != nil
+            {
+                NavigationStack { PodcastsView() }
+                    .withTransportBar(showNowPlaying: $showNowPlaying)
+                    .tabItem { Label("Podcasts", systemImage: "mic") }
+            }
 
             NavigationStack { SearchView() }
                 .withTransportBar(showNowPlaying: $showNowPlaying)

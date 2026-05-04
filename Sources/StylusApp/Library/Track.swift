@@ -12,6 +12,11 @@ struct Track: Identifiable, Hashable
     let bpm:             Double
     let key:             String
     let durationSeconds: Double
+    // Podcast fields. isPodcast is true when the scanner picked the file
+    // up under a podcast root; podcast holds the show name (album-tag
+    // fallback to the parent folder name).
+    let isPodcast:       Bool
+    let podcast:         String
 
     var id: String { filePath }
 }
@@ -30,6 +35,8 @@ extension Track
         self.bpm             = track.bpm
         self.key             = String(cString: track.musicalKey)
         self.durationSeconds = track.durationSeconds
+        self.isPodcast       = track.isPodcast != 0
+        self.podcast         = String(cString: track.podcast)
     }
 
     var displayTitle: String

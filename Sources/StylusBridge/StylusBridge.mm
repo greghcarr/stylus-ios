@@ -68,7 +68,8 @@ struct TrackBytes
 // namespace scope so the tag name matches across the C / C++ boundary.
 struct StylusLibrary
 {
-    std::vector<juce::File>        folders;
+    std::vector<juce::File>        folders;          // music roots
+    std::vector<juce::File>        podcastFolders;   // podcast roots
     Stylus::LibraryScanner         scanner;
     std::vector<Stylus::TrackInfo> scanBuffer;   // accumulates tracks during
                                                  // the current scan so we can
@@ -171,20 +172,28 @@ void Stylus_Initialize (void)
 }
 
 StylusLibraryHandle Stylus_LibraryCreate (const char* const* musicFolders,
-                                          int32_t folderCount)
+                                          int32_t            musicFolderCount,
+                                          const char* const* podcastFolders,
+                                          int32_t            podcastFolderCount)
 {
     auto* h = new (std::nothrow) StylusLibrary();
     if (h == nullptr) return nullptr;
 
-    if (musicFolders != nullptr && folderCount > 0)
+    auto fillFolders = [] (std::vector<juce::File>& dst,
+                            const char* const* src,
+                            int32_t count)
     {
-        h->folders.reserve (static_cast<size_t> (folderCount));
-        for (int32_t i = 0; i < folderCount; ++i)
+        if (src == nullptr || count <= 0) return;
+        dst.reserve (static_cast<size_t> (count));
+        for (int32_t i = 0; i < count; ++i)
         {
-            if (musicFolders[i] == nullptr) continue;
-            h->folders.emplace_back (juce::String (juce::CharPointer_UTF8 (musicFolders[i])));
+            if (src[i] == nullptr) continue;
+            dst.emplace_back (juce::String (juce::CharPointer_UTF8 (src[i])));
         }
-    }
+    };
+
+    fillFolders (h->folders,        musicFolders,   musicFolderCount);
+    fillFolders (h->podcastFolders, podcastFolders, podcastFolderCount);
     return h;
 }
 
@@ -212,12 +221,17 @@ int32_t Stylus_LibraryLoadCache (StylusLibraryHandle handle,
         return 0;
     }
 
-    if (! foldersMatch (cachedMusicFolders, h->folders))
+    if (! foldersMatch (cachedMusicFolders, h->folders)
+        || ! foldersMatch (cachedPodcastFolders, h->podcastFolders))
     {
-        juce::String msg = "Stylus_LibraryLoadCache: folder mismatch. cached:";
-        for (auto& f : cachedMusicFolders) msg << " [" << f.getFullPathName() << " -> " << canonicalPath (f) << "]";
-        msg << "  current:";
-        for (auto& f : h->folders)         msg << " [" << f.getFullPathName() << " -> " << canonicalPath (f) << "]";
+        juce::String msg = "Stylus_LibraryLoadCache: folder mismatch.\n  cached music:";
+        for (auto& f : cachedMusicFolders)    msg << " [" << f.getFullPathName() << " -> " << canonicalPath (f) << "]";
+        msg << "\n  current music:";
+        for (auto& f : h->folders)            msg << " [" << f.getFullPathName() << " -> " << canonicalPath (f) << "]";
+        msg << "\n  cached podcasts:";
+        for (auto& f : cachedPodcastFolders)  msg << " [" << f.getFullPathName() << " -> " << canonicalPath (f) << "]";
+        msg << "\n  current podcasts:";
+        for (auto& f : h->podcastFolders)     msg << " [" << f.getFullPathName() << " -> " << canonicalPath (f) << "]";
         juce::Logger::writeToLog (msg);
         return 0;
     }
@@ -225,10 +239,11 @@ int32_t Stylus_LibraryLoadCache (StylusLibraryHandle handle,
     int32_t count = 0;
     for (auto& t : tracks)
     {
-        const auto migrated = migratePathIfNeeded (t.file.getFullPathName(),
-                                                    cachedMusicFolders, h->folders);
-        if (migrated != t.file.getFullPathName())
-            t.file = juce::File (migrated);
+        auto path = t.file.getFullPathName();
+        path = migratePathIfNeeded (path, cachedMusicFolders,   h->folders);
+        path = migratePathIfNeeded (path, cachedPodcastFolders, h->podcastFolders);
+        if (path != t.file.getFullPathName())
+            t.file = juce::File (path);
 
         TrackBytes tb (std::move (t));
         const StylusTrackC c = tb.asC();
@@ -267,7 +282,7 @@ void Stylus_LibraryStartScan (StylusLibraryHandle handle,
 
     h->scanner.onScanComplete = [h, onDone, userData] (int total)
     {
-        const bool ok = Stylus::LibraryCache::save (h->scanBuffer, h->folders, /*podcastFolders*/ {});
+        const bool ok = Stylus::LibraryCache::save (h->scanBuffer, h->folders, h->podcastFolders);
         juce::Logger::writeToLog (juce::String ("LibraryCache::save -> ") + (ok ? "ok" : "FAILED")
                                   + ", " + juce::String ((int) h->scanBuffer.size()) + " tracks, file: "
                                   + Stylus::LibraryCache::cacheFile().getFullPathName());
@@ -275,7 +290,7 @@ void Stylus_LibraryStartScan (StylusLibraryHandle handle,
         if (onDone != nullptr) onDone (total, userData);
     };
 
-    h->scanner.scanFolders (h->folders, /*podcastFolders*/ {});
+    h->scanner.scanFolders (h->folders, h->podcastFolders);
 }
 
 int32_t Stylus_StylSave (const StylusTrackC* track)

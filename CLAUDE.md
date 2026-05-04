@@ -44,6 +44,12 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
   `Stylus_StylSave`, which re-loads the existing sidecar first so
   disk-side fields the user didn't edit (playCount, dateAdded, lufs,
   etc.) survive.
+- Phase 4.5 (Podcasts folder + tab): done. The Library overflow menu
+  exposes a "Choose podcasts folder…" picker; the bridge now takes
+  both music and podcast roots and the desktop scanner already excludes
+  podcast files from the music scan. The Podcasts tab appears only when
+  a podcast folder is set; it lists distinct shows (per `track.podcast`)
+  and drills into per-show episodes.
 - Phase 7+ (playlists, polish):
   pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 

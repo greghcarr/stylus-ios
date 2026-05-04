@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ArtistsView: View
+struct PodcastsView: View
 {
     @EnvironmentObject var library: LibraryStore
 
@@ -8,12 +8,15 @@ struct ArtistsView: View
     {
         List
         {
-            ForEach(artistRows, id: \.name)
+            ForEach(showRows, id: \.name)
             { row in
                 NavigationLink(value: row.name)
                 {
                     HStack
                     {
+                        Image(systemName: "mic.fill")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24)
                         Text(row.name)
                         Spacer()
                         Text("\(row.count)")
@@ -25,44 +28,44 @@ struct ArtistsView: View
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
-        .navigationTitle("Artists")
+        .navigationTitle("Podcasts")
         .navigationDestination(for: String.self)
-        { artist in
-            ArtistDetailView(artist: artist)
+        { show in
+            PodcastDetailView(show: show)
         }
         .overlay
         {
-            if artistRows.isEmpty
+            if showRows.isEmpty
             {
-                EmptyStateView(title: "No artists",
-                               systemImage: "music.mic",
-                               message: "Tracks will appear here once your library has artists tagged.")
+                EmptyStateView(title: "No podcasts",
+                               systemImage: "mic.slash",
+                               message: "Episodes will appear here once your podcasts folder is scanned.")
             }
         }
     }
 
-    private var artistRows: [ArtistRow]
+    private var showRows: [ShowRow]
     {
         var counts: [String: Int] = [:]
-        for t in library.tracks where !t.isPodcast
+        for t in library.tracks where t.isPodcast
         {
-            guard !t.artist.isEmpty else { continue }
-            counts[t.artist, default: 0] += 1
+            let name = t.podcast.isEmpty ? "Unknown" : t.podcast
+            counts[name, default: 0] += 1
         }
-        return counts.map { ArtistRow(name: $0.key, count: $0.value) }
+        return counts.map { ShowRow(name: $0.key, count: $0.value) }
                      .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    private struct ArtistRow
+    private struct ShowRow
     {
         let name:  String
         let count: Int
     }
 }
 
-struct ArtistDetailView: View
+struct PodcastDetailView: View
 {
-    let artist: String
+    let show: String
 
     @EnvironmentObject var library: LibraryStore
 
@@ -70,29 +73,28 @@ struct ArtistDetailView: View
     {
         List
         {
-            ForEach(tracks)
+            ForEach(episodes)
             { track in
-                TrackRowButton(track: track, visibleTracks: tracks)
+                TrackRowButton(track: track, visibleTracks: episodes)
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
-        .navigationTitle(artist)
+        .navigationTitle(show)
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var tracks: [Track]
+    private var episodes: [Track]
     {
         library.tracks
-            .filter { !$0.isPodcast && $0.artist == artist }
-            .sorted { lhs, rhs in
-                if lhs.album != rhs.album
-                {
-                    return lhs.album.localizedCaseInsensitiveCompare(rhs.album) == .orderedAscending
-                }
+            .filter { $0.isPodcast && ($0.podcast == show || ($0.podcast.isEmpty && show == "Unknown")) }
+            .sorted
+            { lhs, rhs in
+                // Higher episode numbers first matches typical podcast app
+                // ordering (newest at top); falls back to title for ties.
                 if lhs.trackNumber != rhs.trackNumber
                 {
-                    return lhs.trackNumber < rhs.trackNumber
+                    return lhs.trackNumber > rhs.trackNumber
                 }
                 return lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
             }

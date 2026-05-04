@@ -120,7 +120,9 @@ struct EditInfoView: View
             trackNumber:     trackNumber,
             bpm:             original.bpm,
             key:             original.key,
-            durationSeconds: original.durationSeconds
+            durationSeconds: original.durationSeconds,
+            isPodcast:       original.isPodcast,
+            podcast:         original.podcast
         )
         lookup.enqueue(hint, overwrite: true)
         lookingUp = true
@@ -140,7 +142,9 @@ struct EditInfoView: View
             trackNumber:     trackNumber,
             bpm:             original.bpm,
             key:             original.key,
-            durationSeconds: original.durationSeconds
+            durationSeconds: original.durationSeconds,
+            isPodcast:       original.isPodcast,
+            podcast:         original.podcast
         )
         library.save(edited)
         dismiss()

@@ -41,7 +41,11 @@ struct StylusApp: App
                 .environmentObject(lookup)
                 .task
                 {
-                    if let url = folder.folderURL { library.scan(folder: url) }
+                    if folder.musicFolderURL != nil
+                    {
+                        library.scan(music:   folder.musicFolderURL,
+                                     podcast: folder.podcastFolderURL)
+                    }
                 }
         }
     }

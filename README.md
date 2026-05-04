@@ -134,6 +134,9 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       commands (lock screen, Control Center, AirPods, scrub)
 - [x] **Phase 4** Tab bar (Library / Artists / Albums / Search) with
       drill-down navigation. (Playlists deferred to Phase 7.)
+- [x] **Phase 4.5** Podcasts folder + tab. Pick a separate podcasts
+      folder; podcast episodes are excluded from Library / Artists /
+      Albums and surfaced in their own tab grouped by show.
 - [x] **Phase 5** Background BPM / key analysis. User-triggered via the
       Library tab's overflow menu; results write to `.styl` and refresh
       the in-memory library as tracks finish.

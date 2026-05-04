@@ -1,95 +1,133 @@
 import Foundation
 
-// Holds the user-picked music folder, persists access across launches via a
-// security-scoped bookmark in UserDefaults, and keeps the security scope
+// Holds the user-picked music + podcast folders and persists access across
+// launches via security-scoped bookmarks in UserDefaults. The scopes stay
 // active for the lifetime of the store so the C++ scanner and AVAudioPlayer
-// can read files from the folder by plain POSIX path.
+// can read by POSIX path without per-call scoping.
 final class MusicFolderStore: ObservableObject
 {
-    @Published private(set) var folderURL: URL?
+    @Published private(set) var musicFolderURL:   URL?
+    @Published private(set) var podcastFolderURL: URL?
 
-    private var didStartScope = false
+    private var didStartMusicScope:   Bool = false
+    private var didStartPodcastScope: Bool = false
 
-    private static let bookmarkKey = "MusicFolderBookmark"
+    private static let musicBookmarkKey   = "MusicFolderBookmark"
+    private static let podcastBookmarkKey = "PodcastFolderBookmark"
 
     init()
     {
-        loadBookmark()
+        loadBookmark(key: Self.musicBookmarkKey)
+        { [weak self] url, started in
+            self?.musicFolderURL     = url
+            self?.didStartMusicScope = started
+        }
+        loadBookmark(key: Self.podcastBookmarkKey)
+        { [weak self] url, started in
+            self?.podcastFolderURL     = url
+            self?.didStartPodcastScope = started
+        }
     }
 
     deinit
     {
-        stopScope()
+        stopScope(url: musicFolderURL,   started: didStartMusicScope)
+        stopScope(url: podcastFolderURL, started: didStartPodcastScope)
     }
 
-    func set(url: URL)
+    // MARK: - Music
+
+    func setMusic(url: URL)
     {
-        stopScope()
+        stopScope(url: musicFolderURL, started: didStartMusicScope)
+        didStartMusicScope = url.startAccessingSecurityScopedResource()
+        writeBookmark(url: url, key: Self.musicBookmarkKey)
+        musicFolderURL = url
+    }
 
-        didStartScope = url.startAccessingSecurityScopedResource()
+    func clearMusic()
+    {
+        stopScope(url: musicFolderURL, started: didStartMusicScope)
+        musicFolderURL     = nil
+        didStartMusicScope = false
+        UserDefaults.standard.removeObject(forKey: Self.musicBookmarkKey)
+    }
 
+    // MARK: - Podcasts
+
+    func setPodcast(url: URL)
+    {
+        stopScope(url: podcastFolderURL, started: didStartPodcastScope)
+        didStartPodcastScope = url.startAccessingSecurityScopedResource()
+        writeBookmark(url: url, key: Self.podcastBookmarkKey)
+        podcastFolderURL = url
+    }
+
+    func clearPodcast()
+    {
+        stopScope(url: podcastFolderURL, started: didStartPodcastScope)
+        podcastFolderURL     = nil
+        didStartPodcastScope = false
+        UserDefaults.standard.removeObject(forKey: Self.podcastBookmarkKey)
+    }
+
+    // MARK: - Internal
+
+    private func writeBookmark(url: URL, key: String)
+    {
         do
         {
-            let bookmark = try url.bookmarkData()
-            UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
+            let data = try url.bookmarkData()
+            UserDefaults.standard.set(data, forKey: key)
         }
         catch
         {
-            print("MusicFolderStore: failed to write bookmark: \(error)")
+            print("MusicFolderStore: failed to write bookmark for \(key): \(error)")
         }
-
-        folderURL = url
     }
 
-    func clear()
+    private func loadBookmark(key: String,
+                              assign: (URL?, Bool) -> Void)
     {
-        stopScope()
-        folderURL = nil
-        UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
-    }
-
-    private func loadBookmark()
-    {
-        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return }
+        guard let data = UserDefaults.standard.data(forKey: key) else { return }
 
         var isStale = false
         do
         {
             let url = try URL(
                 resolvingBookmarkData: data,
-                options: [],
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
+                options:               [],
+                relativeTo:            nil,
+                bookmarkDataIsStale:   &isStale
             )
 
-            didStartScope = url.startAccessingSecurityScopedResource()
-            guard didStartScope
+            let started = url.startAccessingSecurityScopedResource()
+            guard started
             else
             {
-                UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+                UserDefaults.standard.removeObject(forKey: key)
                 return
             }
 
-            folderURL = url
+            assign(url, true)
 
             if isStale, let fresh = try? url.bookmarkData()
             {
-                UserDefaults.standard.set(fresh, forKey: Self.bookmarkKey)
+                UserDefaults.standard.set(fresh, forKey: key)
             }
         }
         catch
         {
-            print("MusicFolderStore: failed to resolve bookmark: \(error)")
-            UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+            print("MusicFolderStore: failed to resolve bookmark for \(key): \(error)")
+            UserDefaults.standard.removeObject(forKey: key)
         }
     }
 
-    private func stopScope()
+    private func stopScope(url: URL?, started: Bool)
     {
-        if let url = folderURL, didStartScope
+        if let url = url, started
         {
             url.stopAccessingSecurityScopedResource()
         }
-        didStartScope = false
     }
 }
