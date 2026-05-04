@@ -3,11 +3,15 @@ import SwiftUI
 // Top-level chrome. Two layers in a ZStack:
 //   - Tabs layer: TabView (Library / Artists / Albums / Podcasts /
 //     Search) with the persistent TransportBar pinned via
-//     .safeAreaInset(.bottom). Fades opacity when the player expands.
-//   - Player card: TransportBar OR full-screen NowPlayingSheet,
-//     selected on `isExpanded`. matchedGeometryEffect on a shared
-//     "playerCard" id so the bar's frame morphs into the full-screen
-//     frame on tap or swipe-up, and back on close / drag-down.
+//     .safeAreaInset(.bottom). The bar is ALWAYS rendered (not
+//     conditional on isExpanded) so its material background never
+//     flickers in/out underneath the Now Playing sheet on collapse;
+//     when expanded the sheet's full-screen frame simply covers it.
+//   - Player card: when isExpanded, NowPlayingSheet renders on top.
+//     matchedGeometryEffect on a shared "playerCard" id, with the bar
+//     as the (always-present) source: on tap or swipe-up the bar's
+//     frame morphs into the full-screen frame, and on collapse it
+//     morphs back. Tabs fade based on the user's drag-down progress.
 struct RootView: View
 {
     @EnvironmentObject var folder:  MusicFolderStore
@@ -16,11 +20,11 @@ struct RootView: View
     @EnvironmentObject var audio:   AudioPlayer
 
     @Namespace private var nowPlayingNS
-    @State    private var isExpanded   = false
-    // 0 when the sheet is at rest, → 1 as the user drags it toward
-    // dismissal. Drives a continuous tab-bar fade-in during the drag so
-    // the user sees the destination materialising under their finger.
-    @State    private var dragProgress: CGFloat = 0
+    @State    private var isExpanded:  Bool    = false
+    // Single shared source of truth for the user's drag-to-dismiss.
+    // The sheet's offset and the tabs' fade-in both derive from this
+    // value, so they can never render a frame apart.
+    @State    private var dragOffset:  CGFloat = 0
 
     private static let expansion = Animation.spring(response: 0.45,
                                                      dampingFraction: 0.86)
@@ -36,12 +40,13 @@ struct RootView: View
             if isExpanded
             {
                 NowPlayingSheet(
-                    onDismiss:            { collapse() },
-                    onDragProgressChange: { dragProgress = $0 }
+                    dragOffset: $dragOffset,
+                    onDismiss:  { collapse() }
                 )
-                .matchedGeometryEffect(id: "playerCard",
-                                       in: nowPlayingNS,
-                                       anchor: .bottom)
+                .matchedGeometryEffect(id:       "playerCard",
+                                       in:       nowPlayingNS,
+                                       anchor:   .bottom,
+                                       isSource: false)
                 .zIndex(2)
             }
         }
@@ -54,7 +59,7 @@ struct RootView: View
         // While expanded, fade the tabs IN as the user drags the sheet
         // toward dismissal: 0 at rest, 1 when the drag reaches the
         // dismiss threshold.
-        return Double(dragProgress)
+        return Double(min(dragOffset / NowPlayingSheet.dismissThreshold, 1))
     }
 
     private var tabsLayer: some View
@@ -63,19 +68,16 @@ struct RootView: View
         {
             NavigationStack { LibraryListView() }
                 .withTransportBar(namespace: nowPlayingNS,
-                                  isExpanded: isExpanded,
                                   onPresent: { expand() })
                 .tabItem { Label("Library", systemImage: "music.note.list") }
 
             NavigationStack { ArtistsView() }
                 .withTransportBar(namespace: nowPlayingNS,
-                                  isExpanded: isExpanded,
                                   onPresent: { expand() })
                 .tabItem { Label("Artists", systemImage: "music.mic") }
 
             NavigationStack { AlbumsView() }
                 .withTransportBar(namespace: nowPlayingNS,
-                                  isExpanded: isExpanded,
                                   onPresent: { expand() })
                 .tabItem { Label("Albums", systemImage: "square.stack") }
 
@@ -83,14 +85,12 @@ struct RootView: View
             {
                 NavigationStack { PodcastsView() }
                     .withTransportBar(namespace: nowPlayingNS,
-                                      isExpanded: isExpanded,
                                       onPresent: { expand() })
                     .tabItem { Label("Podcasts", systemImage: "mic") }
             }
 
             NavigationStack { SearchView() }
                 .withTransportBar(namespace: nowPlayingNS,
-                                  isExpanded: isExpanded,
                                   onPresent: { expand() })
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }
         }
@@ -105,31 +105,30 @@ struct RootView: View
     {
         withAnimation(Self.expansion)
         {
-            isExpanded   = false
-            dragProgress = 0
+            isExpanded = false
+            dragOffset = 0
         }
     }
 }
 
 private extension View
 {
-    // Pins the small transport bar via .safeAreaInset(.bottom) only when
-    // the player is collapsed; when expanded the bar is hidden because
-    // the matchedGeometryEffect destination view (NowPlayingSheet) is
-    // taking its place at full-screen size.
-    func withTransportBar(namespace:  Namespace.ID,
-                          isExpanded: Bool,
-                          onPresent:  @escaping () -> Void) -> some View
+    // The TransportBar is always rendered in the bottom safe-area
+    // inset, even while the player is expanded. That guarantees its
+    // regularMaterial background is continuously present underneath
+    // the sheet, so the moment the sheet's matched-geometry collapse
+    // ends there's no transparent frame between them. The sheet's
+    // matchedGeometryEffect uses the bar's frame as anchor.
+    func withTransportBar(namespace: Namespace.ID,
+                          onPresent: @escaping () -> Void) -> some View
     {
         safeAreaInset(edge: .bottom)
         {
-            if !isExpanded
-            {
-                TransportBar(onTap: onPresent)
-                    .matchedGeometryEffect(id: "playerCard",
-                                           in: namespace,
-                                           anchor: .bottom)
-            }
+            TransportBar(onTap: onPresent)
+                .matchedGeometryEffect(id:       "playerCard",
+                                       in:       namespace,
+                                       anchor:   .bottom,
+                                       isSource: true)
         }
     }
 }

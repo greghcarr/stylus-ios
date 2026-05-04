@@ -6,8 +6,11 @@ import SwiftUI
 // closure; the close button and drag-down gesture both call it.
 struct NowPlayingSheet: View
 {
-    var onDismiss:             () -> Void      = {}
-    var onDragProgressChange:  (CGFloat) -> Void = { _ in }
+    @Binding var dragOffset: CGFloat   // owned by RootView so the sheet's
+                                       // offset and the tabs' fade-in
+                                       // derive from one shared source.
+
+    var onDismiss: () -> Void = {}
 
     @EnvironmentObject var audio: AudioPlayer
     @EnvironmentObject var queue: PlayQueue
@@ -16,18 +19,13 @@ struct NowPlayingSheet: View
     @State private var sliderValue:     Double = 0
     @State private var userIsScrubbing: Bool   = false
 
-    // Tracks the user's finger during a drag-to-dismiss; auto-resets to 0
-    // when the gesture ends (with a spring) so a release-without-dismissal
-    // returns the sheet to its full-screen position smoothly.
-    @GestureState private var dragOffset: CGFloat = 0
-
     // Threshold at which a drag-down release commits to dismissal; below
     // that, the sheet snaps back. Same scale used to compute tab fade-in.
-    private static let dismissThreshold: CGFloat = 110
+    static let dismissThreshold: CGFloat = 110
 
     var body: some View
     {
-        ZStack(alignment: .topLeading)
+        ZStack(alignment: .top)
         {
             Color(uiColor: .systemBackground)
                 .ignoresSafeArea()
@@ -51,23 +49,12 @@ struct NowPlayingSheet: View
                 }
             }
 
-            // Close affordance in the top-leading corner. The drag-down
-            // gesture below mirrors the sheet's swipe-to-dismiss feel.
-            Button
-            {
-                onDismiss()
-            }
-            label:
-            {
-                Image(systemName: "chevron.down")
-                    .font(.title2.bold())
-                    .foregroundStyle(.secondary)
-                    .padding(8)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, 16)
-            .padding(.top,     16)
+            // Drag handle at the very top: tap to dismiss, drag down to
+            // shrink. Putting the gesture HERE (not on the whole sheet)
+            // means the ScrollView's own scroll gesture wins below the
+            // handle, so the user can scroll Up Next without the sheet
+            // following their finger.
+            dragHandle
         }
         .offset(y: max(0, dragOffset))
         .onChange(of: audio.currentTime)
@@ -78,38 +65,47 @@ struct NowPlayingSheet: View
         { _ in
             sliderValue = audio.currentTime
         }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 12)
-                .updating($dragOffset)
-                { value, state, transaction in
-                    // Only track downward drags. The transaction's spring
-                    // animation runs when the gesture ends and @GestureState
-                    // resets, so a release-without-dismiss snaps back.
-                    state = max(0, value.translation.height)
-                    transaction.animation = .spring(response: 0.32,
-                                                     dampingFraction: 0.85)
-                }
-                .onChanged
-                { value in
-                    let raw      = max(0, value.translation.height)
-                    let progress = min(raw / Self.dismissThreshold, 1)
-                    onDragProgressChange(progress)
-                }
-                .onEnded
-                { value in
-                    if value.translation.height > Self.dismissThreshold
-                    {
-                        onDismiss()
-                    }
-                    else
-                    {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.85))
-                        {
-                            onDragProgressChange(0)
+    }
+
+    @ViewBuilder
+    private var dragHandle: some View
+    {
+        VStack(spacing: 0)
+        {
+            Capsule()
+                .fill(Color.secondary.opacity(0.55))
+                .frame(width: 44, height: 5)
+                // Generous transparent padding so the touch target is
+                // ~80 pt tall x most-of-the-screen wide; the visible pill
+                // stays small.
+                .padding(.vertical, 14)
+                .padding(.horizontal, 100)
+                .contentShape(Rectangle())
+                .onTapGesture { onDismiss() }
+                .gesture(
+                    DragGesture(minimumDistance: 5)
+                        .onChanged
+                        { value in
+                            dragOffset = max(0, value.translation.height)
                         }
-                    }
-                }
-        )
+                        .onEnded
+                        { value in
+                            if value.translation.height > Self.dismissThreshold
+                            {
+                                onDismiss()
+                            }
+                            else
+                            {
+                                withAnimation(.spring(response: 0.32,
+                                                       dampingFraction: 0.85))
+                                {
+                                    dragOffset = 0
+                                }
+                            }
+                        }
+                )
+            Spacer()
+        }
     }
 
     @ViewBuilder
