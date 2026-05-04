@@ -27,13 +27,24 @@ final class LibraryStore: ObservableObject
 
     // Caller is expected to have active security scopes on both URLs for
     // the duration of the scan + subsequent playback.
-    func scan(music: URL?, podcast: URL?)
+    //
+    // forceFullScan: when false (default), the slow metadata-reading
+    // scan is skipped at launch if the cache repopulated successfully
+    // AND a quick recursive file count of the folders matches the
+    // cached track count -- i.e. nothing has been added or removed.
+    // Set true for the user-triggered Rescan menu item so it always
+    // re-reads metadata even when no files have changed (catches
+    // tags edited externally on the desktop).
+    func scan(music: URL?, podcast: URL?, forceFullScan: Bool = false)
     {
         scan(musicPaths:   music.map   { [$0.path] } ?? [],
-             podcastPaths: podcast.map { [$0.path] } ?? [])
+             podcastPaths: podcast.map { [$0.path] } ?? [],
+             forceFullScan: forceFullScan)
     }
 
-    func scan(musicPaths: [String], podcastPaths: [String])
+    func scan(musicPaths:    [String],
+              podcastPaths:  [String],
+              forceFullScan: Bool = false)
     {
         if let h = handle
         {
@@ -90,6 +101,35 @@ final class LibraryStore: ObservableObject
         // Phase 1: instant repopulate from the on-disk cache. Fires
         // libraryStoreOnCachedTrack once per cached track on this thread.
         _ = Stylus_LibraryLoadCache(handle, libraryStoreOnCachedTrack, user)
+
+        // Phase 1.5: skip the slow metadata scan when the cache had
+        // tracks AND a quick FileManager enumeration shows the same
+        // count -- i.e. no files added or removed since the last
+        // scan. countAudioFiles is orders of magnitude faster than
+        // the metadata reads in Phase 2 (~50 ms vs minutes for ~1k
+        // tracks), so this lets dev-build launches feel instant.
+        // Bypassed when forceFullScan is true (toolbar Rescan) so
+        // externally-edited tags still get picked up on demand.
+        if !forceFullScan && !tracks.isEmpty
+        {
+            // Sum-of-counts double-counts files when the podcast
+            // root lives inside the music root (the typical "music/
+            // Podcasts" layout). Walk all folders into a set keyed
+            // by canonical path so each file is counted at most
+            // once -- matches the desktop scanner's behaviour, which
+            // de-dupes across overlapping roots.
+            let folderURLs  = (musicPaths + podcastPaths)
+                .map { URL(fileURLWithPath: $0) }
+            let actualCount = LibraryStore
+                .countUniqueAudioFiles(in: folderURLs)
+            if actualCount == tracks.count
+            {
+                isScanning    = false
+                scannedCount  = 0
+                expectedCount = 0
+                return
+            }
+        }
 
         // Phase 2: kick off the fresh background scan. Scanned tracks
         // accumulate in scanBuffer; the cached `tracks` stay visible until
@@ -175,6 +215,47 @@ final class LibraryStore: ObservableObject
             }
         }
         return count
+    }
+
+    // Counts audio files across multiple roots, de-duplicated by
+    // canonical path so a file that sits under two roots (typical
+    // when the podcast folder is a subdirectory of the music
+    // folder) is counted once. Used by the launch-time skip-scan
+    // check, which compares this against the cache's track count.
+    private static func countUniqueAudioFiles(in roots: [URL]) -> Int
+    {
+        let fm = FileManager.default
+        var seen = Set<String>()
+
+        for root in roots
+        {
+            guard let enumerator = fm.enumerator(
+                    at:                         root,
+                    includingPropertiesForKeys: nil,
+                    options:                    [])
+            else { continue }
+            let rootPath = root.standardizedFileURL.path
+
+            for case let url as URL in enumerator
+            {
+                var cur    = url.standardizedFileURL
+                var hidden = false
+                while cur.path != rootPath
+                {
+                    if cur.lastPathComponent.hasPrefix(".")
+                    { hidden = true; break }
+                    cur = cur.deletingLastPathComponent()
+                }
+                if hidden { continue }
+
+                if audioExtensions.contains(
+                    url.pathExtension.lowercased())
+                {
+                    seen.insert(url.standardizedFileURL.path)
+                }
+            }
+        }
+        return seen.count
     }
 }
 

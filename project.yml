@@ -40,7 +40,12 @@ targets:
         UIApplicationSupportsIndirectInputEvents: true
         UIBackgroundModes:
           - audio
-        UILaunchScreen: {}
+        # Launch storyboard renders the app icon at 180 pt (rounded
+        # square) centered on the system background. The SwiftUI
+        # SplashView reproduces the same visual once SwiftUI takes
+        # over, so the transition from launch chrome to the SwiftUI
+        # tree is invisible.
+        UILaunchStoryboardName: LaunchScreen
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

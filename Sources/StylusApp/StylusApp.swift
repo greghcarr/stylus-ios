@@ -32,7 +32,15 @@ struct StylusApp: App
     {
         WindowGroup
         {
-            RootView()
+            // SplashView shows the app icon for a short beat then
+            // fades to RootView. Environment objects are injected
+            // here at the WindowGroup level so they reach RootView
+            // when SplashView swaps it in. The library scan is
+            // started here too -- by the time the splash fades out
+            // the cache load (and possibly the skip-scan) has
+            // already completed, so the app's first list view shows
+            // tracks immediately rather than blank.
+            SplashView()
                 .environmentObject(folder)
                 .environmentObject(library)
                 .environmentObject(queue)

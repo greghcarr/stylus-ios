@@ -17,8 +17,17 @@ struct TrackRow: View
             artworkThumb
             VStack(alignment: .leading, spacing: 2)
             {
-                Text(track.displayTitle)
-                    .lineLimit(1)
+                HStack(spacing: 6)
+                {
+                    Text(track.displayTitle)
+                        .lineLimit(1)
+                    if isPlaying
+                    {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.caption)
+                            .foregroundStyle(.tint)
+                    }
+                }
                 if !track.subtitle.isEmpty
                 {
                     Text(track.subtitle)
@@ -73,18 +82,9 @@ struct TrackRow: View
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
             }
-            HStack(spacing: 4)
-            {
-                if isPlaying
-                {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.caption)
-                        .foregroundStyle(.tint)
-                }
-                Text(track.formattedDuration)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
+            Text(track.formattedDuration)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
         }
     }
 

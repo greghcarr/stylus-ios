@@ -92,6 +92,13 @@ struct TabTitleMenu: ViewModifier
     {
         content
             .navigationBarTitleDisplayMode(.inline)
+            // Force the nav-bar backdrop visible so it stays put
+            // during tab switches. Default behavior only shows it
+            // when content is scrolled under the bar; during the
+            // cross-fade between two NavigationStacks neither tab
+            // owns the backdrop, so it briefly vanishes -- which
+            // reads as a flicker at the top of the screen.
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar
             {
                 ToolbarItem(placement: .principal)

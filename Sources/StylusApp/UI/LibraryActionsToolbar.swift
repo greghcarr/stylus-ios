@@ -15,8 +15,6 @@ struct LibraryActionsToolbar: ViewModifier
 {
     @EnvironmentObject var library:  LibraryStore
     @EnvironmentObject var folder:   MusicFolderStore
-    @EnvironmentObject var analysis: AnalysisController
-    @EnvironmentObject var lookup:   LookupController
 
     @State private var showMusicPicker:   Bool = false
     @State private var showPodcastPicker: Bool = false
@@ -49,10 +47,26 @@ struct LibraryActionsToolbar: ViewModifier
             }
     }
 
+    // Used after picking a new folder via fileImporter -- we want
+    // the cache-then-scan flow with the skip-scan optimization
+    // intact (the cache load will return zero tracks for a freshly-
+    // changed folder, so the skip check fails and a full scan runs
+    // anyway).
     private func rescan()
     {
         library.scan(music:   folder.musicFolderURL,
                      podcast: folder.podcastFolderURL)
+    }
+
+    // Used when the user explicitly hits the Rescan menu item or
+    // removes a podcasts folder. forceFullScan: true bypasses the
+    // skip-scan optimization so externally-edited metadata gets
+    // picked up.
+    private func fullRescan()
+    {
+        library.scan(music:         folder.musicFolderURL,
+                     podcast:       folder.podcastFolderURL,
+                     forceFullScan: true)
     }
 
     @ToolbarContentBuilder
@@ -66,95 +80,26 @@ struct LibraryActionsToolbar: ViewModifier
             }
             else if folder.musicFolderURL != nil
             {
-                Menu
-                {
-                    Button("Rescan") { rescan() }
-
-                    Button("Change music folder…")
-                    {
-                        showMusicPicker = true
-                    }
-
-                    if folder.podcastFolderURL != nil
-                    {
-                        Button("Change podcasts folder…")
-                        {
-                            showPodcastPicker = true
-                        }
-                        Button(role: .destructive)
-                        {
-                            folder.clearPodcast()
-                            rescan()
-                        }
-                        label:
-                        {
-                            Label("Remove podcasts folder",
-                                  systemImage: "minus.circle")
-                        }
-                    }
-                    else
-                    {
-                        Button
-                        {
-                            showPodcastPicker = true
-                        }
-                        label:
-                        {
-                            Label("Choose podcasts folder…",
-                                  systemImage: "mic.badge.plus")
-                        }
-                    }
-
-                    Divider()
-
-                    if analysis.isAnalysing
-                    {
-                        Button(role: .destructive) { analysis.cancelAll() }
-                        label:
-                        {
-                            Label("Stop analysing (\(analysis.queueDepth) left)",
-                                  systemImage: "stop.circle")
-                        }
-                    }
-                    else
-                    {
-                        Button { analysis.enqueueUnanalysed(library.tracks) }
-                        label:
-                        {
-                            Label("Analyse library", systemImage: "waveform")
-                        }
-                    }
-
-                    if lookup.inProgress
-                    {
-                        Button(role: .destructive) { lookup.cancelAll() }
-                        label:
-                        {
-                            Label("Stop lookup (\(lookup.queueDepth) left)",
-                                  systemImage: "stop.circle")
-                        }
-                    }
-                    else
-                    {
-                        Button { lookup.enqueueAllArtOnly(library.tracks) }
-                        label:
-                        {
-                            Label("Look up missing artwork",
-                                  systemImage: "photo.on.rectangle.angled")
-                        }
-                    }
-                }
-                label:
-                {
-                    if analysis.isAnalysing || lookup.inProgress
-                    {
-                        ProgressView().controlSize(.small)
-                    }
-                    else
-                    {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                }
+                // UIKit-backed button so the menu's UIContextMenu-
+                // Interaction is set ONCE in makeUIView and survives
+                // the parent's frequent re-renders during analyse /
+                // lookup (which would otherwise rebuild a SwiftUI
+                // Menu's UIKit host and produce visible flicker +
+                // the "updateVisibleMenuWithBlock while no context
+                // menu is visible" log spam). Same pattern as the
+                // tab title menu in TabNavigation.swift.
+                LibraryActionsButton(
+                    podcastsFolderSet:     folder.podcastFolderURL != nil,
+                    // Re-scan is always a force-full-scan: the user
+                    // is explicitly asking us to re-read every
+                    // file's metadata in case tags changed externally.
+                    onRescan:              { fullRescan() },
+                    onChangeMusicFolder:   { showMusicPicker = true },
+                    onChangePodcastFolder: { showPodcastPicker = true },
+                    onRemovePodcastFolder: { folder.clearPodcast()
+                                             fullRescan() },
+                    onChoosePodcastFolder: { showPodcastPicker = true }
+                )
             }
         }
     }
@@ -165,5 +110,140 @@ extension View
     func libraryActionsToolbar() -> some View
     {
         modifier(LibraryActionsToolbar())
+    }
+}
+
+// UIKit-backed button hosting the overflow menu. Its UIMenu is set
+// once in makeUIView using a UIDeferredMenuElement that pulls the
+// item list from the Coordinator's stored state at menu-open time
+// -- so SwiftUI's frequent updateUIView calls (one per parent
+// re-render) only refresh the Coordinator's mirrored state and
+// never reassign button.menu. Result: the UIContextMenuInteraction
+// instance is preserved unchanged across re-renders, eliminating
+// the same flicker the title menu used to have.
+private struct LibraryActionsButton: UIViewRepresentable
+{
+    let podcastsFolderSet:     Bool
+
+    let onRescan:              () -> Void
+    let onChangeMusicFolder:   () -> Void
+    let onChangePodcastFolder: () -> Void
+    let onRemovePodcastFolder: () -> Void
+    let onChoosePodcastFolder: () -> Void
+
+    func makeCoordinator() -> Coordinator
+    {
+        Coordinator()
+    }
+
+    final class Coordinator
+    {
+        var podcastsFolderSet:     Bool       = false
+
+        var onRescan:              () -> Void = {}
+        var onChangeMusicFolder:   () -> Void = {}
+        var onChangePodcastFolder: () -> Void = {}
+        var onRemovePodcastFolder: () -> Void = {}
+        var onChoosePodcastFolder: () -> Void = {}
+
+        // Builds the menu structure from the Coordinator's current
+        // state. Called by the UIDeferredMenuElement each time the
+        // user opens the menu, so the conditional folder-removal
+        // entry reflects the latest podcast-folder presence.
+        func buildMenu() -> [UIMenuElement]
+        {
+            var items: [UIMenuElement] = []
+
+            items.append(UIAction(
+                title: "Change music folder…",
+                image: UIImage(systemName: "music.note")
+            )
+            { [weak self] _ in self?.onChangeMusicFolder() })
+
+            if podcastsFolderSet
+            {
+                items.append(UIAction(
+                    title: "Change podcasts folder…",
+                    image: UIImage(systemName: "mic")
+                )
+                { [weak self] _ in self?.onChangePodcastFolder() })
+
+                items.append(UIAction(
+                    title:      "Remove podcasts folder",
+                    image:      UIImage(systemName: "minus.circle"),
+                    attributes: .destructive
+                )
+                { [weak self] _ in self?.onRemovePodcastFolder() })
+            }
+            else
+            {
+                items.append(UIAction(
+                    title: "Choose podcasts folder…",
+                    image: UIImage(systemName: "mic.badge.plus")
+                )
+                { [weak self] _ in self?.onChoosePodcastFolder() })
+            }
+
+            // Re-scan sits at the bottom of the menu so the folder-
+            // management entries (which the user reaches for less
+            // often) don't push it out of sight.
+            items.append(UIAction(
+                title: "Re-scan folders",
+                image: UIImage(systemName: "arrow.triangle.2.circlepath")
+            )
+            { [weak self] _ in self?.onRescan() })
+
+            return items
+        }
+    }
+
+    func makeUIView(context: Context) -> UIButton
+    {
+        let button = UIButton(type: .system)
+        button.showsMenuAsPrimaryAction = true
+
+        let deferred = UIDeferredMenuElement.uncached
+        { [weak coord = context.coordinator] completion in
+            guard let coord = coord else { completion([]); return }
+            completion(coord.buildMenu())
+        }
+        button.menu = UIMenu(title: "", children: [deferred])
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context)
+    {
+        let coord = context.coordinator
+        coord.podcastsFolderSet     = podcastsFolderSet
+        coord.onRescan              = onRescan
+        coord.onChangeMusicFolder   = onChangeMusicFolder
+        coord.onChangePodcastFolder = onChangePodcastFolder
+        coord.onRemovePodcastFolder = onRemovePodcastFolder
+        coord.onChoosePodcastFolder = onChoosePodcastFolder
+
+        // Static ellipsis.circle. Sized via the body text style so
+        // it matches sibling SwiftUI ProgressView() sizing in the
+        // same toolbar slot when the bar shows the scanning spinner.
+        var config           = UIButton.Configuration.plain()
+        let symbolConfig     = UIImage.SymbolConfiguration(
+                                   textStyle: .body)
+        config.image         = UIImage(
+            systemName:        "ellipsis.circle",
+            withConfiguration: symbolConfig
+        )
+        button.configuration = config
+    }
+
+    // Without this, SwiftUI passes the proposed size (the toolbar's
+    // entire available width) down to the UIButton, which then
+    // renders huge -- the menu's hit area covered ~2/3 of the
+    // screen. Returning the button's intrinsic size constrains the
+    // representable to just the image's natural footprint, matching
+    // a normal SwiftUI Button in the same slot.
+    func sizeThatFits(_ proposal:  ProposedViewSize,
+                      uiView:      UIButton,
+                      context:     Context) -> CGSize?
+    {
+        return uiView.intrinsicContentSize
     }
 }
