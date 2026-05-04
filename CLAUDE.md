@@ -32,7 +32,13 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
   Library tab's overflow menu; the bridged `AnalysisEngine` writes the
   `.styl` sidecar on each track and the in-memory library updates as
   tracks finish so BPM / key appear without a rescan.
-- Phase 6+ (Apple Music lookup, playlists, polish):
+- Phase 6 (iTunes Search lookup, library-wide art): done for the
+  artwork-only flow. Library tab's overflow menu has "Look up missing
+  artwork"; the bridged `AppleMusicLookup` writes a `.styl-art.jpg`
+  sidecar per track and `ArtworkCache.invalidate(for:)` drops the
+  stale cache entry so the next decode picks up the new file. Full
+  metadata lookup + Edit Info sheet are deferred to a later sub-phase.
+- Phase 7+ (playlists, polish):
   pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 
 ## Build
@@ -101,6 +107,11 @@ stylus-ios/
                               exposes queueDepth + isAnalysing, and pushes
                               freshly-analysed tracks back into LibraryStore
                               via updateTrack on the main thread.
+        LookupController.swift Drives the bridged AppleMusicLookup. Same
+                              shape as AnalysisController; on completion
+                              calls ArtworkCache.invalidate(for:) so the
+                              row's next decode pass picks up the new
+                              .styl-art.jpg sidecar.
       UI/
         RootView.swift        TabView with Library / Artists / Albums /
                               Search; pins TransportBar via

@@ -8,6 +8,7 @@ struct StylusApp: App
     @StateObject private var queue:    PlayQueue
     @StateObject private var audio:    AudioPlayer
     @StateObject private var analysis: AnalysisController
+    @StateObject private var lookup:   LookupController
     private let nowPlaying:           NowPlayingController
 
     init()
@@ -17,12 +18,13 @@ struct StylusApp: App
         let a   = AudioPlayer(queue: q)
         let lib = LibraryStore()
         // Re-binding library to the StateObject below keeps a single source
-        // of truth: AnalysisController holds a weak ref to the same
-        // instance that body's environmentObject(library) hands down.
+        // of truth: Analysis / Lookup controllers hold a weak ref to the
+        // same instance that body's environmentObject(library) hands down.
         _queue    = StateObject(wrappedValue: q)
         _audio    = StateObject(wrappedValue: a)
         _library  = StateObject(wrappedValue: lib)
         _analysis = StateObject(wrappedValue: AnalysisController(library: lib))
+        _lookup   = StateObject(wrappedValue: LookupController(library: lib))
         nowPlaying = NowPlayingController(audio: a)
     }
 
@@ -36,6 +38,7 @@ struct StylusApp: App
                 .environmentObject(queue)
                 .environmentObject(audio)
                 .environmentObject(analysis)
+                .environmentObject(lookup)
                 .task
                 {
                     if let url = folder.folderURL { library.scan(folder: url) }

@@ -2,7 +2,11 @@ import UIKit
 
 // In-memory cache of decoded album-art `UIImage`s keyed by track file path.
 // Bounded by `NSCache.countLimit` so iOS can evict under memory pressure.
-@MainActor
+//
+// Not actor-isolated: NSCache is documented thread-safe, so cache hits /
+// stores / invalidations can fire from anywhere (the lookup completion
+// callback, off-main artwork decoders, the main-thread row .task). That
+// also keeps loadArtwork(for:) free of awaits when reading the cache.
 final class ArtworkCache
 {
     static let shared = ArtworkCache()
@@ -23,6 +27,13 @@ final class ArtworkCache
     {
         cache.setObject(image, forKey: path as NSString)
     }
+
+    // Drops a single entry. Called by LookupController when a sidecar
+    // artwork file has just been written so the next decode pass picks it up.
+    func invalidate(for path: String)
+    {
+        cache.removeObject(forKey: path as NSString)
+    }
 }
 
 // Returns the album art for the given track path, decoding off the main
@@ -32,7 +43,7 @@ final class ArtworkCache
 // (juce_graphics is not in the iOS build).
 func loadArtwork(for path: String) async -> UIImage?
 {
-    if let cached = await ArtworkCache.shared.cached(for: path) { return cached }
+    if let cached = ArtworkCache.shared.cached(for: path) { return cached }
 
     let img: UIImage? = await Task.detached(priority: .userInitiated)
     {
@@ -70,6 +81,6 @@ func loadArtwork(for path: String) async -> UIImage?
         return nil
     }.value
 
-    if let img = img { await ArtworkCache.shared.store(img, for: path) }
+    if let img = img { ArtworkCache.shared.store(img, for: path) }
     return img
 }

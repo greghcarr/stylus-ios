@@ -1,6 +1,7 @@
 #include "StylusBridge.h"
 
 #include "analysis/AnalysisEngine.h"
+#include "analysis/AppleMusicLookup.h"
 #include "library/LibraryScanner.h"
 #include "library/LibraryCache.h"
 #include "audio/StylFile.h"
@@ -77,6 +78,11 @@ struct StylusLibrary
 struct StylusAnalysis
 {
     Stylus::AnalysisEngine engine;
+};
+
+struct StylusLookup
+{
+    Stylus::AppleMusicLookup engine;
 };
 
 namespace
@@ -355,6 +361,106 @@ void Stylus_AnalysisQueue (StylusAnalysisHandle handle,
 }
 
 void Stylus_AnalysisCancel (StylusAnalysisHandle handle)
+{
+    if (handle == nullptr) return;
+    handle->engine.cancelAll();
+}
+
+// --- Lookup ---
+
+StylusLookupHandle Stylus_LookupCreate (Stylus_OnLookupEventFn     onQueued,
+                                         Stylus_OnLookupEventFn     onStarted,
+                                         Stylus_OnLookupCompletedFn onCompleted,
+                                         Stylus_OnLookupSuspendedFn onSuspended,
+                                         void* userData)
+{
+    auto* h = new (std::nothrow) StylusLookup();
+    if (h == nullptr) return nullptr;
+
+    h->engine.onLookupQueued = [onQueued, userData] (Stylus::TrackInfo t)
+    {
+        if (onQueued == nullptr) return;
+        TrackBytes tb (std::move (t));
+        const StylusTrackC c = tb.asC();
+        onQueued (&c, userData);
+    };
+
+    h->engine.onLookupStarted = [onStarted, userData] (Stylus::TrackInfo t)
+    {
+        if (onStarted == nullptr) return;
+        TrackBytes tb (std::move (t));
+        const StylusTrackC c = tb.asC();
+        onStarted (&c, userData);
+    };
+
+    h->engine.onLookupCompleted =
+        [onCompleted, userData] (Stylus::TrackInfo t,
+                                  juce::String     status,
+                                  bool             isBatch)
+    {
+        if (onCompleted == nullptr) return;
+        TrackBytes tb (std::move (t));
+        const StylusTrackC c = tb.asC();
+        const std::string  statusStr = status.toStdString();
+        onCompleted (&c, statusStr.c_str(), isBatch ? 1 : 0, userData);
+    };
+
+    h->engine.onLookupSuspended = [onSuspended, userData]()
+    {
+        if (onSuspended != nullptr) onSuspended (userData);
+    };
+
+    return h;
+}
+
+void Stylus_LookupDestroy (StylusLookupHandle handle)
+{
+    if (handle == nullptr) return;
+    delete handle;
+}
+
+namespace
+{
+    Stylus::TrackInfo makeLookupTrack (const char* path,
+                                       const char* artist,
+                                       const char* album,
+                                       const char* title)
+    {
+        Stylus::TrackInfo info;
+        if (path != nullptr)
+            info.file   = juce::File (juce::String (juce::CharPointer_UTF8 (path)));
+        if (artist != nullptr)
+            info.artist = juce::String (juce::CharPointer_UTF8 (artist));
+        if (album != nullptr)
+            info.album  = juce::String (juce::CharPointer_UTF8 (album));
+        if (title != nullptr)
+            info.title  = juce::String (juce::CharPointer_UTF8 (title));
+        return info;
+    }
+}
+
+void Stylus_LookupQueue (StylusLookupHandle handle,
+                          const char* trackPath,
+                          const char* artist,
+                          const char* album,
+                          const char* title,
+                          int32_t overwrite)
+{
+    if (handle == nullptr || trackPath == nullptr) return;
+    handle->engine.enqueue (makeLookupTrack (trackPath, artist, album, title),
+                             overwrite != 0);
+}
+
+void Stylus_LookupQueueArtOnly (StylusLookupHandle handle,
+                                 const char* trackPath,
+                                 const char* artist,
+                                 const char* album)
+{
+    if (handle == nullptr || trackPath == nullptr) return;
+    handle->engine.enqueueArtOnly (makeLookupTrack (trackPath, artist, album, nullptr));
+}
+
+void Stylus_LookupCancel (StylusLookupHandle handle)
 {
     if (handle == nullptr) return;
     handle->engine.cancelAll();

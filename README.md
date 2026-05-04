@@ -137,7 +137,10 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
 - [x] **Phase 5** Background BPM / key analysis. User-triggered via the
       Library tab's overflow menu; results write to `.styl` and refresh
       the in-memory library as tracks finish.
-- [ ] **Phase 6** Apple Music lookup
+- [x] **Phase 6a** iTunes Search "look up missing artwork" library-wide
+      action. Edit Info sheet + per-track full-metadata lookup are
+      deferred to Phase 6b.
+- [ ] **Phase 6b** Edit Info sheet + per-track lookup
 - [ ] **Phase 7** Drag-and-drop playlist editing
 - [ ] **Phase 8** iPad NavigationSplitView, AirPlay, polish
 - [ ] **Phase 9** (desktop side) Cable + Wi-Fi sync engine via libimobiledevice

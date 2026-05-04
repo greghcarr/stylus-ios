@@ -119,6 +119,55 @@ void Stylus_AnalysisQueue(StylusAnalysisHandle handle,
 // fires onAnalysed normally.
 void Stylus_AnalysisCancel(StylusAnalysisHandle handle);
 
+// --- iTunes Search lookup ---
+
+typedef struct StylusLookup StylusLookup;
+typedef StylusLookup* StylusLookupHandle;
+
+typedef void (*Stylus_OnLookupEventFn)(const StylusTrackC* track, void* userData);
+typedef void (*Stylus_OnLookupCompletedFn)(const StylusTrackC* track,
+                                           const char* status,
+                                           int32_t isBatch,
+                                           void* userData);
+typedef void (*Stylus_OnLookupSuspendedFn)(void* userData);
+
+// Creates a lookup engine that queries the public iTunes Search API for
+// each enqueued track. Callbacks fire on the main thread:
+//   onQueued    - track was just queued
+//   onStarted   - engine started this track
+//   onCompleted - finished; status is human-readable ("Found: <album>",
+//                 "No match", "Network error"); isBatch flags art-only or
+//                 batch-mode jobs vs single-track jobs
+//   onSuspended - fires once if the engine self-suspends after consecutive
+//                 network failures; no further events arrive after that
+StylusLookupHandle Stylus_LookupCreate(Stylus_OnLookupEventFn onQueued,
+                                       Stylus_OnLookupEventFn onStarted,
+                                       Stylus_OnLookupCompletedFn onCompleted,
+                                       Stylus_OnLookupSuspendedFn onSuspended,
+                                       void* userData);
+
+void Stylus_LookupDestroy(StylusLookupHandle handle);
+
+// Full lookup: fills missing fields (artist / album / year / genre /
+// trackNumber) on the .styl sidecar AND downloads cover art into a
+// .styl-art.jpg sidecar. overwrite=1 replaces existing fields rather
+// than only filling blanks.
+void Stylus_LookupQueue(StylusLookupHandle handle,
+                        const char* trackPath,
+                        const char* artist,
+                        const char* album,
+                        const char* title,
+                        int32_t overwrite);
+
+// Artwork-only variant: writes the .styl-art.jpg sidecar; .styl metadata
+// fields are NOT modified.
+void Stylus_LookupQueueArtOnly(StylusLookupHandle handle,
+                               const char* trackPath,
+                               const char* artist,
+                               const char* album);
+
+void Stylus_LookupCancel(StylusLookupHandle handle);
+
 // --- Album artwork ---
 
 // Extracts embedded artwork bytes (JPEG or PNG) from the audio file at the

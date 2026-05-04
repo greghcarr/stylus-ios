@@ -13,6 +13,7 @@ struct LibraryListView: View
     @EnvironmentObject var library:  LibraryStore
     @EnvironmentObject var folder:   MusicFolderStore
     @EnvironmentObject var analysis: AnalysisController
+    @EnvironmentObject var lookup:   LookupController
 
     @State private var showFolderPicker = false
 
@@ -79,10 +80,34 @@ struct LibraryListView: View
                             Label("Analyse library", systemImage: "waveform")
                         }
                     }
+                    if lookup.inProgress
+                    {
+                        Button(role: .destructive)
+                        {
+                            lookup.cancelAll()
+                        }
+                        label:
+                        {
+                            Label("Stop lookup (\(lookup.queueDepth) left)",
+                                  systemImage: "stop.circle")
+                        }
+                    }
+                    else
+                    {
+                        Button
+                        {
+                            lookup.enqueueAllArtOnly(library.tracks)
+                        }
+                        label:
+                        {
+                            Label("Look up missing artwork",
+                                  systemImage: "photo.on.rectangle.angled")
+                        }
+                    }
                 }
                 label:
                 {
-                    if analysis.isAnalysing
+                    if analysis.isAnalysing || lookup.inProgress
                     {
                         // iOS 17 has .symbolEffect(.variableColor.iterative);
                         // a small ProgressView reads similarly on iOS 16.
