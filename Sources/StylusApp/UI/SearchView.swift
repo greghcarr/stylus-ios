@@ -23,7 +23,7 @@ struct SearchView: View
         {
             if query.isEmpty
             {
-                EmptyStateView(title: "Search the library",
+                EmptyStateView(title: "Search your library",
                                systemImage: "magnifyingglass",
                                message: "Find tracks by title, artist, or album.")
             }
