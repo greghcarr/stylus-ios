@@ -33,6 +33,14 @@ final class AudioPlayer: ObservableObject
     // Where the current schedule started, used to compute absolute
     // currentTime when summed with the node's playerTime since play().
     private var seekFrame:   AVAudioFramePosition = 0
+    // Bumped on every schedule-changing event (new schedule, stop). The
+    // .dataPlayedBack completion handler captures the current value at
+    // schedule time and ignores its fire if the generation has moved on,
+    // because iOS sometimes fires the old schedule's completion after we've
+    // cancelled it via node.stop(), which would otherwise cascade through
+    // the queue (each playNext stops the previous schedule, the previous
+    // schedule's completion then triggers another playNext, and so on).
+    private var scheduleGen: UInt64 = 0
     private var timer:       Timer?
 
     private weak var queue: PlayQueue?
@@ -121,6 +129,7 @@ final class AudioPlayer: ObservableObject
 
     private func stopInternal()
     {
+        scheduleGen &+= 1     // invalidate any pending .dataPlayedBack callback
         node.stop()
         if engine.isRunning { engine.stop() }
         isPlaying = false
@@ -172,6 +181,9 @@ final class AudioPlayer: ObservableObject
         let remaining = totalFrames - startFrame
         guard remaining > 0 else { return }
 
+        scheduleGen &+= 1
+        let myGen = scheduleGen
+
         node.scheduleSegment(
             f,
             startingFrame:          startFrame,
@@ -181,8 +193,13 @@ final class AudioPlayer: ObservableObject
         )
         { [weak self] _ in
             // completionHandler fires on a background thread; bounce onto
-            // MainActor so we can touch @Published state safely.
-            Task { @MainActor [weak self] in self?.handleTrackEnd() }
+            // MainActor so we can touch @Published state safely. Drop the
+            // event if a newer schedule has superseded this one (see the
+            // scheduleGen comment near its declaration).
+            Task { @MainActor [weak self] in
+                guard let self = self, myGen == self.scheduleGen else { return }
+                self.handleTrackEnd()
+            }
         }
 
         if !engine.isRunning { try? engine.start() }
