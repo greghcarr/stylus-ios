@@ -133,5 +133,7 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
 - [ ] **Phase 7** Drag-and-drop playlist editing
 - [ ] **Phase 8** iPad NavigationSplitView, AirPlay, polish
 - [ ] **Phase 9** (desktop side) Cable + Wi-Fi sync engine via libimobiledevice
+- [ ] **Phase X** CarPlay - aspirational, gated on Apple's CarPlay Audio
+      entitlement (paid Developer Program + Apple approval). May never ship.
 
 Full plan: [IOS_PORT_PLAN.md](External/stylus/IOS_PORT_PLAN.md).
