@@ -16,8 +16,12 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
 - Phase 1.7 (per-file scanner timeout, smaller batch size): done.
 - Phase 2 (album art + full `.styl` metadata in row): done. Track row shows
   thumbnail + bpm + musical key alongside title/artist/album/duration.
-- Phase 3+ (transport / queue / Now Playing, sidebar, analysis, Apple Music
-  lookup, playlists, polish): pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
+- Phase 3a (Swift PlayQueue, AVAudioEngine-based AudioPlayer, bottom
+  TransportBar, auto-advance): done. Tap a row to queue from there to end
+  of view; transport bar pinned above the safe area.
+- Phase 3b+ (full-screen Now Playing sheet, MPNowPlayingInfoCenter + lock
+  screen + remote commands, sidebar, analysis, Apple Music lookup,
+  playlists, polish): pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 
 ## Build
 Day-to-day: open `StylusApp.xcodeproj` in Xcode, ⌘R. The Xcode project itself
@@ -54,7 +58,13 @@ stylus-ios/
                               "JUCE INTERFACE-link gotcha" below).
     StylusApp/
       StylusApp.swift         App entry. Calls Stylus_Initialize() once.
-      Audio/AudioPlayer.swift AVAudioSession + AVAudioPlayer for tap-to-play.
+                              Constructs PlayQueue + AudioPlayer wired to it.
+      Audio/
+        AudioPlayer.swift     AVAudioEngine + AVAudioPlayerNode. Auto-advances
+                              through the attached PlayQueue on track end;
+                              exposes currentTime / duration / isPlaying.
+        PlayQueue.swift       Ordered list + currentIndex; advance / goBack /
+                              jump / setQueue. Swift-side, not bridged.
       Library/
         Track.swift           Swift value type bridging from StylusTrackC.
         LibraryStore.swift    ObservableObject. Owns the C library handle,
@@ -64,8 +74,13 @@ stylus-ios/
         ArtworkCache.swift    NSCache of decoded UIImage keyed by file path,
                               plus an async loadArtwork(for:) helper that
                               calls Stylus_ExtractArtwork off the main thread.
-      UI/LibraryListView.swift NavigationStack with three states: pick-folder,
-                              scanning-with-progress-bar, populated list.
+      UI/
+        LibraryListView.swift NavigationStack with three states (pick-folder,
+                              scanning-with-progress-bar, populated list).
+                              Pins TransportBar at the bottom; tap-to-enqueue
+                              uses the current library order as the queue.
+        TransportBar.swift    Bottom strip with art / title / play-pause /
+                              next. Hidden when nothing is current.
       Resources/
         Info.plist            UIFileSharingEnabled (for On My iPhone surface),
                               LSSupportsOpeningDocumentsInPlace,
@@ -137,6 +152,33 @@ Two-step on every launch:
    next launch reads back the freshest snapshot.
 The cache key is implicit (folder set match); changing the picked folder
 discards the previous cache.
+
+### Audio engine choice
+Picked `AVAudioEngine` + `AVAudioPlayerNode` over `AVAudioPlayer` because
+the eventual roadmap (DJ mode: gapless, level meters, EQ / pitch-shift,
+two-deck mixing) all needs the engine graph. `AVAudioPlayer` doesn't scale
+into any of that; the upgrade later would be a rewrite. `AVAudioEngine`
+costs ~30 extra lines in [AudioPlayer.swift](Sources/StylusApp/Audio/AudioPlayer.swift)
+and we get the foundation for free.
+
+Per-track playback flow:
+1. `play(_ track)` opens `AVAudioFile`, captures `processingFormat`,
+   `length`, and `sampleRate`.
+2. `engine.connect(node, to: engine.mainMixerNode, format: file.processingFormat)`
+   reconnects with each track's native format so the mixer downmixes /
+   resamples to the output device. (Files with different formats can
+   follow each other without engine.stop() because we re-connect.)
+3. `node.scheduleSegment(..., completionCallbackType: .dataPlayedBack)`
+   schedules the entire file from `seekFrame` and registers a completion
+   handler that bounces onto MainActor and calls `playNext()`.
+4. `engine.start()` if needed, `node.play()`.
+
+`currentTime` is computed on a 0.25 s `Timer` from
+`node.playerTime(forNodeTime:lastRenderTime)` plus the current
+`seekFrame` offset. Seeks `node.stop()` + `scheduleSegment` from the new
+frame so `lastRenderTime` resets and the offset arithmetic stays right.
+Pause keeps the buffer scheduled, so `node.play()` resumes seamlessly
+without rescheduling.
 
 ### Album art loading
 [Sources/StylusApp/Library/ArtworkCache.swift](Sources/StylusApp/Library/ArtworkCache.swift)

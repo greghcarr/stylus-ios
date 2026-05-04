@@ -5,6 +5,7 @@ struct LibraryListView: View
 {
     @EnvironmentObject var library: LibraryStore
     @EnvironmentObject var audio:   AudioPlayer
+    @EnvironmentObject var queue:   PlayQueue
     @EnvironmentObject var folder:  MusicFolderStore
 
     @State private var showFolderPicker = false
@@ -13,9 +14,14 @@ struct LibraryListView: View
     {
         NavigationStack
         {
-            content
-                .navigationTitle("Library")
-                .toolbar { toolbar }
+            VStack(spacing: 0)
+            {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                TransportBar()
+            }
+            .navigationTitle("Library")
+            .toolbar { toolbar }
         }
         .fileImporter(
             isPresented: $showFolderPicker,
@@ -79,21 +85,30 @@ struct LibraryListView: View
 
     private var trackList: some View
     {
-        List(library.tracks)
-        { track in
+        List(Array(library.tracks.enumerated()), id: \.element.id)
+        { (index, track) in
             Button
             {
-                if audio.nowPlayingPath == track.filePath { audio.stop() }
-                else                                       { audio.play(filePath: track.filePath) }
+                playFromRow(at: index)
             }
             label:
             {
                 TrackRow(track: track,
-                         isPlaying: audio.nowPlayingPath == track.filePath)
+                         isPlaying: audio.currentTrack?.filePath == track.filePath)
             }
             .buttonStyle(.plain)
         }
         .listStyle(.plain)
+    }
+
+    // Mirrors the desktop's "tap a row, queue this row to end of view" rule.
+    // The library's current order is what becomes the queue.
+    private func playFromRow(at index: Int)
+    {
+        let tracks = library.tracks
+        guard index >= 0, index < tracks.count else { return }
+        queue.setQueue(tracks, startingAt: index)
+        if let t = queue.currentTrack { audio.play(t) }
     }
 
     @ViewBuilder

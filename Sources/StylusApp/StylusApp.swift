@@ -5,11 +5,15 @@ struct StylusApp: App
 {
     @StateObject private var folder  = MusicFolderStore()
     @StateObject private var library = LibraryStore()
-    @StateObject private var audio   = AudioPlayer()
+    @StateObject private var queue:    PlayQueue
+    @StateObject private var audio:    AudioPlayer
 
     init()
     {
         Stylus_Initialize()
+        let q = PlayQueue()
+        _queue = StateObject(wrappedValue: q)
+        _audio = StateObject(wrappedValue: AudioPlayer(queue: q))
     }
 
     var body: some Scene
@@ -19,6 +23,7 @@ struct StylusApp: App
             LibraryListView()
                 .environmentObject(folder)
                 .environmentObject(library)
+                .environmentObject(queue)
                 .environmentObject(audio)
                 .task
                 {
