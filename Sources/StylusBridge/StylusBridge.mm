@@ -1,5 +1,6 @@
 #include "StylusBridge.h"
 
+#include "analysis/AnalysisEngine.h"
 #include "library/LibraryScanner.h"
 #include "library/LibraryCache.h"
 #include "audio/StylFile.h"
@@ -71,6 +72,11 @@ struct StylusLibrary
     std::vector<Stylus::TrackInfo> scanBuffer;   // accumulates tracks during
                                                  // the current scan so we can
                                                  // write the cache on done
+};
+
+struct StylusAnalysis
+{
+    Stylus::AnalysisEngine engine;
 };
 
 namespace
@@ -296,6 +302,62 @@ unsigned char* Stylus_ExtractArtwork (const char* trackPath, size_t* outSize)
 void Stylus_FreeArtworkBytes (unsigned char* bytes)
 {
     std::free (bytes);
+}
+
+// --- Analysis ---
+
+StylusAnalysisHandle Stylus_AnalysisCreate (Stylus_OnAnalysisEventFn onQueued,
+                                             Stylus_OnAnalysisEventFn onStarted,
+                                             Stylus_OnAnalysisEventFn onAnalysed,
+                                             void* userData)
+{
+    auto* h = new (std::nothrow) StylusAnalysis();
+    if (h == nullptr) return nullptr;
+
+    auto wrap = [userData] (Stylus_OnAnalysisEventFn fn)
+    {
+        return [fn, userData] (Stylus::TrackInfo t)
+        {
+            if (fn == nullptr) return;
+            TrackBytes tb (std::move (t));
+            const StylusTrackC c = tb.asC();
+            fn (&c, userData);
+        };
+    };
+
+    h->engine.onTrackQueued   = wrap (onQueued);
+    h->engine.onTrackStarted  = wrap (onStarted);
+    h->engine.onTrackAnalysed = wrap (onAnalysed);
+    return h;
+}
+
+void Stylus_AnalysisDestroy (StylusAnalysisHandle handle)
+{
+    if (handle == nullptr) return;
+    handle->engine.cancelAll();
+    delete handle;
+}
+
+void Stylus_AnalysisQueue (StylusAnalysisHandle handle,
+                            const char* trackPath,
+                            double knownBpm,
+                            const char* knownKey)
+{
+    if (handle == nullptr || trackPath == nullptr) return;
+
+    Stylus::TrackInfo info;
+    info.file = juce::File (juce::String (juce::CharPointer_UTF8 (trackPath)));
+    info.bpm  = knownBpm;
+    if (knownKey != nullptr)
+        info.musicalKey = juce::String (juce::CharPointer_UTF8 (knownKey));
+
+    handle->engine.enqueue (info);
+}
+
+void Stylus_AnalysisCancel (StylusAnalysisHandle handle)
+{
+    if (handle == nullptr) return;
+    handle->engine.cancelAll();
 }
 
 } // extern "C"

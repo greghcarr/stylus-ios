@@ -85,6 +85,40 @@ void Stylus_LibraryStartScan(StylusLibraryHandle handle,
 // Stylus_StylLoad on the same thread.
 int32_t Stylus_StylLoad(const char* trackPath, StylusTrackC* outTrack);
 
+// --- Background BPM / key analysis ---
+
+typedef struct StylusAnalysis StylusAnalysis;
+typedef StylusAnalysis* StylusAnalysisHandle;
+
+// Fired on the main thread for each analysis lifecycle event.
+typedef void (*Stylus_OnAnalysisEventFn)(const StylusTrackC* track, void* userData);
+
+// Creates an analysis engine. The three callbacks fire on the main thread:
+//   onQueued   - track was just enqueued (skipped if already analysed).
+//   onStarted  - engine started running BPM / key on this track.
+//   onAnalysed - finished; the StylusTrackC has fresh bpm + musicalKey
+//                (and the .styl sidecar has been written to disk).
+StylusAnalysisHandle Stylus_AnalysisCreate(Stylus_OnAnalysisEventFn onQueued,
+                                           Stylus_OnAnalysisEventFn onStarted,
+                                           Stylus_OnAnalysisEventFn onAnalysed,
+                                           void* userData);
+
+// Cancels any in-flight analysis and frees the handle.
+void Stylus_AnalysisDestroy(StylusAnalysisHandle handle);
+
+// Enqueues a single track. The engine skips the track outright if both
+// `knownBpm` > 0 and `knownKey` is non-empty (a cheap pre-check that
+// avoids spinning up the worker thread for already-analysed tracks).
+// Caller-owned strings are copied; safe to deallocate after the call.
+void Stylus_AnalysisQueue(StylusAnalysisHandle handle,
+                          const char* trackPath,
+                          double knownBpm,
+                          const char* knownKey);
+
+// Cancels every queued track. The currently-running track finishes and
+// fires onAnalysed normally.
+void Stylus_AnalysisCancel(StylusAnalysisHandle handle);
+
 // --- Album artwork ---
 
 // Extracts embedded artwork bytes (JPEG or PNG) from the audio file at the

@@ -134,7 +134,9 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       commands (lock screen, Control Center, AirPods, scrub)
 - [x] **Phase 4** Tab bar (Library / Artists / Albums / Search) with
       drill-down navigation. (Playlists deferred to Phase 7.)
-- [ ] **Phase 5** Background analysis (BPM / key)
+- [x] **Phase 5** Background BPM / key analysis. User-triggered via the
+      Library tab's overflow menu; results write to `.styl` and refresh
+      the in-memory library as tracks finish.
 - [ ] **Phase 6** Apple Music lookup
 - [ ] **Phase 7** Drag-and-drop playlist editing
 - [ ] **Phase 8** iPad NavigationSplitView, AirPlay, polish

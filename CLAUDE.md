@@ -28,7 +28,11 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
   drill-down): done. RootView owns the TabView, the persistent
   TransportBar via `.safeAreaInset(.bottom)`, and the NowPlayingSheet
   presentation, so every tab gets the same chrome.
-- Phase 5+ (analysis, Apple Music lookup, playlists, polish):
+- Phase 5 (background BPM / key analysis): done. User-triggered via the
+  Library tab's overflow menu; the bridged `AnalysisEngine` writes the
+  `.styl` sidecar on each track and the in-memory library updates as
+  tracks finish so BPM / key appear without a rescan.
+- Phase 6+ (Apple Music lookup, playlists, polish):
   pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 
 ## Build
@@ -85,11 +89,18 @@ stylus-ios/
         Track.swift           Swift value type bridging from StylusTrackC.
         LibraryStore.swift    ObservableObject. Owns the C library handle,
                               cache-then-scan flow, scan progress counters.
+                              updateTrack(_:) is called by AnalysisController
+                              to refresh BPM / key in-place without a rescan.
         MusicFolderStore.swift Holds the user-picked music folder URL,
                               persists it as a security-scoped bookmark.
         ArtworkCache.swift    NSCache of decoded UIImage keyed by file path,
                               plus an async loadArtwork(for:) helper that
                               calls Stylus_ExtractArtwork off the main thread.
+        AnalysisController.swift Drives the bridged AnalysisEngine. Queues
+                              tracks the user requested for analysis,
+                              exposes queueDepth + isAnalysing, and pushes
+                              freshly-analysed tracks back into LibraryStore
+                              via updateTrack on the main thread.
       UI/
         RootView.swift        TabView with Library / Artists / Albums /
                               Search; pins TransportBar via

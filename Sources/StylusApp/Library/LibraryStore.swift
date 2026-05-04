@@ -91,6 +91,17 @@ final class LibraryStore: ObservableObject
         tracks.append(track)
     }
 
+    // Replaces an existing track in-place by file-path identity. Used by
+    // AnalysisController when a freshly-analysed track comes back, so BPM /
+    // key in the UI update without a full rescan.
+    func updateTrack(_ updated: Track)
+    {
+        if let idx = tracks.firstIndex(where: { $0.filePath == updated.filePath })
+        {
+            tracks[idx] = updated
+        }
+    }
+
     fileprivate func appendScannedTrack(_ track: Track)
     {
         scanBuffer.append(track)

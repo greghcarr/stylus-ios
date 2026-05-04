@@ -10,8 +10,9 @@ import UniformTypeIdentifiers
 // them.
 struct LibraryListView: View
 {
-    @EnvironmentObject var library: LibraryStore
-    @EnvironmentObject var folder:  MusicFolderStore
+    @EnvironmentObject var library:  LibraryStore
+    @EnvironmentObject var folder:   MusicFolderStore
+    @EnvironmentObject var analysis: AnalysisController
 
     @State private var showFolderPicker = false
 
@@ -54,10 +55,43 @@ struct LibraryListView: View
                     {
                         showFolderPicker = true
                     }
+                    Divider()
+                    if analysis.isAnalysing
+                    {
+                        Button(role: .destructive)
+                        {
+                            analysis.cancelAll()
+                        }
+                        label:
+                        {
+                            Label("Stop analysing (\(analysis.queueDepth) left)",
+                                  systemImage: "stop.circle")
+                        }
+                    }
+                    else
+                    {
+                        Button
+                        {
+                            analysis.enqueueUnanalysed(library.tracks)
+                        }
+                        label:
+                        {
+                            Label("Analyse library", systemImage: "waveform")
+                        }
+                    }
                 }
                 label:
                 {
-                    Image(systemName: "ellipsis.circle")
+                    if analysis.isAnalysing
+                    {
+                        // iOS 17 has .symbolEffect(.variableColor.iterative);
+                        // a small ProgressView reads similarly on iOS 16.
+                        ProgressView().controlSize(.small)
+                    }
+                    else
+                    {
+                        Image(systemName: "ellipsis.circle")
+                    }
                 }
             }
         }
