@@ -194,11 +194,26 @@ without rescheduling.
 [Sources/StylusApp/Library/ArtworkCache.swift](Sources/StylusApp/Library/ArtworkCache.swift)
 exposes a `MainActor`-isolated `ArtworkCache` (singleton, `NSCache` of
 `UIImage` keyed by track file path, count limit 200) plus a free async
-`loadArtwork(for:)` that decodes off the main thread on cache miss. The
-bridge functions `Stylus_ExtractArtwork` / `Stylus_FreeArtworkBytes`
-return malloc'd JPEG / PNG bytes via the desktop's
-[AlbumArtExtractor.mm](External/stylus/src/audio/AlbumArtExtractor.mm)
-(AVFoundation `commonMetadata` query). Each `TrackRow` runs its own
+`loadArtwork(for:)` that decodes off the main thread on cache miss.
+
+The lookup chain mirrors the desktop's
+[AlbumArtExtractor.cpp](External/stylus/src/audio/AlbumArtExtractor.cpp),
+re-implemented in Swift because the desktop's `juce::Image`-returning
+function lives in juce_graphics which isn't linked on iOS:
+
+1. **Embedded artwork**: bridge functions
+   `Stylus_ExtractArtwork` / `Stylus_FreeArtworkBytes` return malloc'd
+   JPEG / PNG bytes via the desktop's
+   [AlbumArtExtractor.mm](External/stylus/src/audio/AlbumArtExtractor.mm)
+   (AVFoundation `commonMetadata` query).
+2. **Per-track sidecar**: `.<filename>.styl-art.jpg` next to the audio
+   file (written by the desktop's Apple Music lookup task).
+3. **Folder-level art**: `cover / folder / artwork / album / front`
+   with extensions `jpg / jpeg / png` in the audio file's parent
+   directory. APFS is case-insensitive so we don't enumerate case
+   variants.
+
+Each `TrackRow` runs its own
 `.task(id: filePath) { artwork = await loadArtwork(for: filePath) }`,
 which is fine because SwiftUI's `List` virtualises and only visible rows
 fire their task. Cache hits short-circuit the detached work entirely so
