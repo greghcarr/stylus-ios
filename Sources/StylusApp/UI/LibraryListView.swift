@@ -1,44 +1,36 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// Library tab: flat list of every scanned track, in the order the scanner
+// emitted them (alphabetical by file path). Other surfaces (Artists,
+// Albums, Search) are separate views in the parent RootView's TabView.
+//
+// Wrapped in a NavigationStack by RootView. The persistent TransportBar
+// and the NowPlayingSheet live at the RootView level so every tab shares
+// them.
 struct LibraryListView: View
 {
     @EnvironmentObject var library: LibraryStore
-    @EnvironmentObject var audio:   AudioPlayer
-    @EnvironmentObject var queue:   PlayQueue
     @EnvironmentObject var folder:  MusicFolderStore
 
     @State private var showFolderPicker = false
-    @State private var showNowPlaying   = false
 
     var body: some View
     {
-        NavigationStack
-        {
-            VStack(spacing: 0)
-            {
-                content
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                TransportBar(onTap: { showNowPlaying = true })
-            }
+        content
             .navigationTitle("Library")
             .toolbar { toolbar }
-        }
-        .fileImporter(
-            isPresented: $showFolderPicker,
-            allowedContentTypes: [.folder]
-        )
-        { result in
-            if case .success(let url) = result
-            {
-                folder.set(url: url)
-                library.scan(folder: url)
+            .fileImporter(
+                isPresented: $showFolderPicker,
+                allowedContentTypes: [.folder]
+            )
+            { result in
+                if case .success(let url) = result
+                {
+                    folder.set(url: url)
+                    library.scan(folder: url)
+                }
             }
-        }
-        .sheet(isPresented: $showNowPlaying)
-        {
-            NowPlayingSheet()
-        }
     }
 
     @ToolbarContentBuilder
@@ -90,30 +82,11 @@ struct LibraryListView: View
 
     private var trackList: some View
     {
-        List(Array(library.tracks.enumerated()), id: \.element.id)
-        { (index, track) in
-            Button
-            {
-                playFromRow(at: index)
-            }
-            label:
-            {
-                TrackRow(track: track,
-                         isPlaying: audio.currentTrack?.filePath == track.filePath)
-            }
-            .buttonStyle(.plain)
+        List(library.tracks)
+        { track in
+            TrackRowButton(track: track, visibleTracks: library.tracks)
         }
         .listStyle(.plain)
-    }
-
-    // Mirrors the desktop's "tap a row, queue this row to end of view" rule.
-    // The library's current order is what becomes the queue.
-    private func playFromRow(at index: Int)
-    {
-        let tracks = library.tracks
-        guard index >= 0, index < tracks.count else { return }
-        queue.setQueue(tracks, startingAt: index)
-        if let t = queue.currentTrack { audio.play(t) }
     }
 
     @ViewBuilder
@@ -186,99 +159,5 @@ struct LibraryListView: View
             }
             .padding()
         }
-    }
-}
-
-private struct TrackRow: View
-{
-    let track:     Track
-    let isPlaying: Bool
-
-    @State private var artwork: UIImage?
-
-    var body: some View
-    {
-        HStack(spacing: 12)
-        {
-            artworkThumb
-            VStack(alignment: .leading, spacing: 2)
-            {
-                Text(track.displayTitle)
-                    .lineLimit(1)
-                if !track.subtitle.isEmpty
-                {
-                    Text(track.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            Spacer()
-            trailingMetadata
-        }
-        .contentShape(Rectangle())
-        .padding(.vertical, 4)
-        .task(id: track.filePath)
-        {
-            artwork = await loadArtwork(for: track.filePath)
-        }
-    }
-
-    @ViewBuilder
-    private var artworkThumb: some View
-    {
-        Group
-        {
-            if let artwork = artwork
-            {
-                Image(uiImage: artwork)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            }
-            else
-            {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.15))
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .foregroundStyle(.secondary)
-                    )
-            }
-        }
-        .frame(width: 44, height: 44)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-    }
-
-    private var trailingMetadata: some View
-    {
-        VStack(alignment: .trailing, spacing: 2)
-        {
-            if !analysisLine.isEmpty
-            {
-                Text(analysisLine)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-            }
-            HStack(spacing: 4)
-            {
-                if isPlaying
-                {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.caption)
-                        .foregroundStyle(.tint)
-                }
-                Text(track.formattedDuration)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var analysisLine: String
-    {
-        var parts: [String] = []
-        if !track.formattedBpm.isEmpty { parts.append(track.formattedBpm) }
-        if !track.key.isEmpty           { parts.append(track.key) }
-        return parts.joined(separator: " ")
     }
 }

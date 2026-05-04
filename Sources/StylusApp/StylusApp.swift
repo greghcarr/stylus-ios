@@ -23,7 +23,7 @@ struct StylusApp: App
     {
         WindowGroup
         {
-            LibraryListView()
+            RootView()
                 .environmentObject(folder)
                 .environmentObject(library)
                 .environmentObject(queue)

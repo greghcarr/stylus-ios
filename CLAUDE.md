@@ -24,7 +24,11 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
 - Phase 3c (MPNowPlayingInfoCenter + remote commands + lock-screen art):
   done. Lock screen, Control Center, and AirPods controls drive playback;
   artwork shows on the lock screen.
-- Phase 4+ (sidebar, analysis, Apple Music lookup, playlists, polish):
+- Phase 4 (tab bar with Library / Artists / Albums / Search,
+  drill-down): done. RootView owns the TabView, the persistent
+  TransportBar via `.safeAreaInset(.bottom)`, and the NowPlayingSheet
+  presentation, so every tab gets the same chrome.
+- Phase 5+ (analysis, Apple Music lookup, playlists, polish):
   pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 
 ## Build
@@ -87,11 +91,26 @@ stylus-ios/
                               plus an async loadArtwork(for:) helper that
                               calls Stylus_ExtractArtwork off the main thread.
       UI/
-        LibraryListView.swift NavigationStack with three states (pick-folder,
-                              scanning-with-progress-bar, populated list).
-                              Pins TransportBar at the bottom; tap-to-enqueue
-                              uses the current library order as the queue.
-                              Owns the .sheet that hosts NowPlayingSheet.
+        RootView.swift        TabView with Library / Artists / Albums /
+                              Search; pins TransportBar via
+                              .safeAreaInset(.bottom); owns the
+                              NowPlayingSheet presentation.
+        LibraryListView.swift Library tab content: three states
+                              (pick-folder, scanning-with-progress-bar,
+                              populated list). NavigationStack is owned by
+                              RootView, not here.
+        ArtistsView.swift     Artists tab + ArtistDetailView.
+        AlbumsView.swift      Albums tab + AlbumDetailView, with a
+                              representative-track artwork thumbnail.
+        SearchView.swift      Search tab; .searchable filters tracks by
+                              title / artist / album live.
+        TrackRow.swift        Pure-presentation row used by every track
+                              list (Library, Artist, Album, Search).
+        TrackRowButton.swift  Button wrapper that, on tap, sets the queue
+                              to the visible-track slice and starts
+                              playback at the tapped row.
+        EmptyStateView.swift  iOS-16-compatible stand-in for SwiftUI 17's
+                              ContentUnavailableView.
         TransportBar.swift    Bottom strip with art / title / play-pause /
                               next. Tappable art+title region calls the
                               onTap closure (parent presents the sheet).
@@ -101,6 +120,9 @@ stylus-ios/
                               that mirrors audio.currentTime when not being
                               dragged, so user scrubbing doesn't fight with
                               the 0.25 s currentTime ticker.
+        CircleSlider.swift    Circle-thumbed scrubber used in the Now
+                              Playing sheet; thumb / track / shadow spring
+                              up while dragging.
       Resources/
         Info.plist            UIFileSharingEnabled (for On My iPhone surface),
                               LSSupportsOpeningDocumentsInPlace,

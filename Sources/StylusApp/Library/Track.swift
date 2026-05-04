@@ -8,6 +8,7 @@ struct Track: Identifiable, Hashable
     let album:           String
     let genre:           String
     let year:            String
+    let trackNumber:     Int
     let bpm:             Double
     let key:             String
     let durationSeconds: Double
@@ -25,6 +26,7 @@ extension Track
         self.album           = String(cString: track.album)
         self.genre           = String(cString: track.genre)
         self.year            = String(cString: track.year)
+        self.trackNumber     = Int(track.trackNumber)
         self.bpm             = track.bpm
         self.key             = String(cString: track.musicalKey)
         self.durationSeconds = track.durationSeconds

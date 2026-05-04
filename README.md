@@ -132,7 +132,8 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       big transport)
 - [x] **Phase 3c** `MPNowPlayingInfoCenter` + lock-screen art + remote
       commands (lock screen, Control Center, AirPods, scrub)
-- [ ] **Phase 4** Sidebar views (Artists / Albums / Playlists / Search)
+- [x] **Phase 4** Tab bar (Library / Artists / Albums / Search) with
+      drill-down navigation. (Playlists deferred to Phase 7.)
 - [ ] **Phase 5** Background analysis (BPM / key)
 - [ ] **Phase 6** Apple Music lookup
 - [ ] **Phase 7** Drag-and-drop playlist editing
