@@ -11,8 +11,15 @@ struct CircleSlider: View
 
     @State private var isDragging = false
 
-    private let trackHeight:   CGFloat = 4
-    private let thumbDiameter: CGFloat = 22
+    private let trackHeightIdle:    CGFloat = 4
+    private let trackHeightActive:  CGFloat = 7
+    private let thumbDiameter:      CGFloat = 22
+    private let thumbScaleActive:   CGFloat = 1.18
+
+    private var animation: Animation
+    {
+        .spring(response: 0.32, dampingFraction: 0.72)
+    }
 
     var body: some View
     {
@@ -23,17 +30,20 @@ struct CircleSlider: View
             let span         = max(range.upperBound - range.lowerBound, 0.0001)
             let progress     = max(0, min(1, (value - range.lowerBound) / span))
             let thumbLeading = progress * usableWidth
+            let trackHeight  = isDragging ? trackHeightActive : trackHeightIdle
 
             ZStack(alignment: .leading)
             {
                 Capsule()
                     .fill(Color.secondary.opacity(0.25))
                     .frame(height: trackHeight)
+                    .animation(animation, value: isDragging)
 
                 Capsule()
                     .fill(Color.accentColor)
                     .frame(width: thumbLeading + thumbDiameter / 2,
                            height: trackHeight)
+                    .animation(animation, value: isDragging)
 
                 Circle()
                     .fill(Color.white)
@@ -41,8 +51,12 @@ struct CircleSlider: View
                         Circle().strokeBorder(Color.black.opacity(0.05), lineWidth: 0.5)
                     )
                     .frame(width: thumbDiameter, height: thumbDiameter)
-                    .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+                    .scaleEffect(isDragging ? thumbScaleActive : 1.0)
+                    .shadow(color: .black.opacity(isDragging ? 0.28 : 0.18),
+                            radius: isDragging ? 4 : 2,
+                            y:      isDragging ? 2 : 1)
                     .offset(x: thumbLeading)
+                    .animation(animation, value: isDragging)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
