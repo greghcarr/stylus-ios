@@ -31,8 +31,10 @@ stylus-ios/
 
 Prerequisites:
 
-- macOS with Xcode 15+ and Xcode Command Line Tools.
-- The iOS device platform installed (Xcode → Settings → Platforms).
+- macOS with Xcode 16+ and Xcode Command Line Tools. The deployment
+  target is iOS 18 (uses `onScrollGeometryChange` and other iOS 18+
+  APIs); install the corresponding iOS 18 SDK via
+  Xcode → Settings → Platforms.
 - An iOS Simulator runtime if you want to run on the simulator
   (Xcode → Settings → Platforms → iOS Simulator).
 - Homebrew. Used for:
@@ -132,18 +134,35 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       big transport)
 - [x] **Phase 3c** `MPNowPlayingInfoCenter` + lock-screen art + remote
       commands (lock screen, Control Center, AirPods, scrub)
-- [x] **Phase 4** Tab bar (Library / Artists / Albums / Search) with
-      drill-down navigation. (Playlists deferred to Phase 7.)
+- [x] **Phase 4** All Songs / Artists / Albums / Search with drill-down
+      navigation. The default iOS tab bar is hidden in favour of a tap-
+      able title chevron (UIKit-backed `UIButton` + `UIDeferredMenuElement`)
+      so the bottom of the screen is reserved for the mini Now Playing
+      bar. (Playlists deferred to Phase 7.)
 - [x] **Phase 4.5** Podcasts folder + tab. Pick a separate podcasts
-      folder; podcast episodes are excluded from Library / Artists /
+      folder; podcast episodes are excluded from All Songs / Artists /
       Albums and surfaced in their own tab grouped by show.
 - [x] **Phase 5** Background BPM / key analysis. User-triggered via the
-      Library tab's overflow menu; results write to `.styl` and refresh
-      the in-memory library as tracks finish.
+      trailing overflow menu; results write to `.styl` and refresh the
+      in-memory library as tracks finish.
 - [x] **Phase 6a** iTunes Search "look up missing artwork" library-wide
       action.
 - [x] **Phase 6b** Edit Info sheet + per-track context menu (Play Next /
       Add to Queue / Look up on iTunes / Edit Info)
+- [x] **Phase 6c** Skip-scan launch optimisation. After loading the
+      cache we run a quick `FileManager` enumeration of the music +
+      podcast folders (de-duped via a Set so files under both roots
+      aren't counted twice); if the count matches the cache's track
+      count, the slow metadata-reading scan is skipped entirely. The
+      "Re-scan folders" menu item bypasses it on demand.
+- [x] **Phase 6d** Custom Now Playing presentation. Single `sheetY`
+      state drives a finger-tracking expand-from-bar / dismiss flow,
+      with a collapsing artwork header (full-size at scroll-top,
+      shrunk to ¼ pinned at the visible top through the collapse
+      range, then continues scrolling normally). Auto-presents on
+      `scenePhase = .active` so dynamic-island / lock-screen taps
+      land users on the full sheet immediately. Splash screen +
+      launch storyboard for a no-flash launch.
 - [ ] **Phase 7** Drag-and-drop playlist editing
 - [ ] **Phase 8** iPad NavigationSplitView, AirPlay, polish
 - [ ] **Phase 9** (desktop side) Cable + Wi-Fi sync engine via libimobiledevice

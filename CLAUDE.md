@@ -24,18 +24,32 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
 - Phase 3c (MPNowPlayingInfoCenter + remote commands + lock-screen art):
   done. Lock screen, Control Center, and AirPods controls drive playback;
   artwork shows on the lock screen.
-- Phase 4 (tab bar with Library / Artists / Albums / Search,
-  drill-down): done. RootView owns the TabView, the persistent
-  TransportBar via `.safeAreaInset(.bottom)`, and the NowPlayingSheet
-  presentation, so every tab gets the same chrome.
-- Phase 5 (background BPM / key analysis): done. User-triggered via the
-  Library tab's overflow menu; the bridged `AnalysisEngine` writes the
-  `.styl` sidecar on each track and the in-memory library updates as
-  tracks finish so BPM / key appear without a rescan.
-- Phase 6a (iTunes Search lookup, library-wide art): done. Library tab
-  overflow has "Look up missing artwork"; the bridged `AppleMusicLookup`
-  writes `.styl-art.jpg` per track and `ArtworkCache.invalidate(for:)`
-  drops the stale cache entry so the next decode picks up the new file.
+- Phase 4 (tab navigation: All Songs / Artists / Albums / Podcasts /
+  Search, drill-down): done. RootView owns a `TabView` (hidden tab
+  bar via `.toolbar(.hidden, for: .tabBar)` on each NavigationStack),
+  a `TabRouter` ObservableObject that holds the active `AppTab`, and
+  the NowPlayingSheet presentation. Tab switching is via a custom
+  title chevron in each tab's principal toolbar slot -- a UIKit
+  `UIButton` with `UIDeferredMenuElement` so the menu is set ONCE in
+  `makeUIView` and survives the parent's frequent re-renders during
+  the library scan (a SwiftUI `Menu` in the same slot flickered).
+  Each tab also gets a shared `.libraryActionsToolbar()` modifier
+  for the trailing ellipsis menu (Change music folder / Change
+  podcasts folder / Re-scan folders), again UIKit-backed for the
+  same reason.
+- Phase 5 (background BPM / key analysis): done. The bridged
+  `AnalysisEngine` writes the `.styl` sidecar on each track and the
+  in-memory library updates as tracks finish so BPM / key appear
+  without a rescan. Note: the user-triggered menu entries for
+  "Analyse library" / "Look up missing artwork" were removed from the
+  trailing toolbar menu in 2026-05; the controllers still exist and
+  are still wired into LibraryStore, but no UI currently invokes them.
+  Re-add to `LibraryActionsButton.Coordinator.buildMenu` if needed.
+- Phase 6a (iTunes Search lookup, library-wide art): done at the
+  controller level (LookupController is wired through StylusApp's
+  environment objects). The trailing-menu entry that triggered it
+  was removed alongside the analyse entry; re-add when reintroducing
+  bulk lookup as a user action.
 - Phase 6b (Edit Info sheet + per-track context menu): done. Long-press
   a track row to get Play Next / Add to Queue / Look up / Edit Info....
   EditInfoView is a Form-based metadata editor with a "Look up on
@@ -44,12 +58,32 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
   `Stylus_StylSave`, which re-loads the existing sidecar first so
   disk-side fields the user didn't edit (playCount, dateAdded, lufs,
   etc.) survive.
-- Phase 4.5 (Podcasts folder + tab): done. The Library overflow menu
-  exposes a "Choose podcasts folder…" picker; the bridge now takes
-  both music and podcast roots and the desktop scanner already excludes
-  podcast files from the music scan. The Podcasts tab appears only when
-  a podcast folder is set; it lists distinct shows (per `track.podcast`)
-  and drills into per-show episodes.
+- Phase 4.5 (Podcasts folder + tab): done. The trailing overflow menu
+  exposes a "Choose podcasts folder…" picker; the bridge takes both
+  music and podcast roots and the desktop scanner already excludes
+  podcast files from the music scan. The Podcasts tab appears only
+  when a podcast folder is set; it lists distinct shows (per
+  `track.podcast`) and drills into per-show episodes.
+- Phase 6c (skip-scan optimisation): done. After
+  `Stylus_LibraryLoadCache` repopulates `tracks` from the on-disk
+  cache, `LibraryStore.scan` runs a quick recursive
+  `FileManager.enumerator` over the music + podcast roots, de-duped
+  via a `Set<String>` keyed by canonical path (so files that sit
+  under both roots aren't counted twice -- typical "music/Podcasts"
+  layout). If the de-duped count matches `tracks.count`, the slow
+  metadata-reading scan is skipped entirely (~50 ms vs. minutes for
+  ~1k tracks). The "Re-scan folders" menu calls
+  `scan(forceFullScan: true)` to bypass on demand.
+- Phase 6d (custom Now Playing presentation): done. Single `sheetY`
+  state in RootView drives both directions of motion -- the
+  TransportBar's lift drag and the sheet's dismiss drag both write
+  to it, finger-tracking via `.global` coordinate-space gestures.
+  The full-screen sheet has a collapsing artwork header
+  (`scaleEffect(anchor: .top)` + sticky offset, scroll position via
+  iOS 18's `.onScrollGeometryChange`). Auto-presents on
+  `scenePhase = .active` if a track is current, so dynamic-island /
+  lock-screen taps land users in the full sheet. Splash screen +
+  launch storyboard for a no-flash launch.
 - Phase 7+ (playlists, polish):
   pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 
@@ -57,6 +91,11 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
 Day-to-day: open `StylusApp.xcodeproj` in Xcode, ⌘R. The Xcode project itself
 is generated from [project.yml](project.yml) by [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 and is gitignored. `make` regenerates it; click Revert in Xcode if it's open.
+
+Deployment target is iOS 18 (used `.onScrollGeometryChange` for the
+NowPlayingSheet's collapsing artwork; the GeometryReader +
+PreferenceKey workaround that's standard on iOS 16/17 didn't fire
+reliably on the simulator). Bumped from 16 in 2026-05.
 
 ```bash
 make           # regenerate StylusApp.xcodeproj from project.yml
@@ -125,27 +164,88 @@ stylus-ios/
                               row's next decode pass picks up the new
                               .styl-art.jpg sidecar.
       UI/
-        RootView.swift        TabView with Library / Artists / Albums /
-                              Search; pins TransportBar via
-                              .safeAreaInset(.bottom); owns the
-                              NowPlayingSheet presentation.
-        LibraryListView.swift Library tab content: three states
-                              (pick-folder, scanning-with-progress-bar,
-                              populated list). NavigationStack is owned by
-                              RootView, not here.
+        RootView.swift        ZStack with the TabView (system tab bar
+                              hidden) and the NowPlayingSheet conditionally
+                              rendered on top. Owns sheetY (single source
+                              of truth for the sheet's vertical position --
+                              0 = fully expanded, screenH = at the
+                              TransportBar). Watches scenePhase to auto-
+                              present on .active. The TransportBar lives
+                              below the TabView in a VStack so the system
+                              tab bar (when visible) sits ABOVE the bar;
+                              currently the system tab bar is hidden via
+                              .toolbar(.hidden, for: .tabBar) on each tab.
+        SplashView.swift      Initial app surface. Shows the rounded
+                              SplashIcon centred on systemBackground for
+                              ~1.6 s, then fades to RootView. Matches the
+                              LaunchScreen.storyboard exactly so the hand-
+                              off from launch chrome to SwiftUI is
+                              invisible (no shadow, .ignoresSafeArea on
+                              the ZStack so the centre matches the
+                              storyboard's full-window centring).
+        TabNavigation.swift   AppTab enum (one case per tab),
+                              TabRouter ObservableObject (current tab,
+                              injected via custom .tabRouter env key NOT
+                              .environmentObject so consumers don't
+                              subscribe to its @Published), and the
+                              .tabTitleMenu(_:) modifier that hangs a
+                              UIKit-backed UIButton off the principal
+                              toolbar slot. The button uses
+                              UIDeferredMenuElement so its UIMenu is set
+                              ONCE in makeUIView; updateUIView only
+                              writes coordinator state and refreshes the
+                              title (avoids the SwiftUI Menu flicker
+                              under high-frequency parent re-renders
+                              during library scan).
+        LibraryActionsToolbar.swift
+                              Reusable .libraryActionsToolbar() modifier
+                              applied to every tab root. Trailing
+                              ellipsis-circle UIButton (also UIKit-backed
+                              via UIDeferredMenuElement, same lifecycle
+                              concern) hosts Change music folder /
+                              Change podcasts folder / Re-scan folders.
+                              Owns the showMusicPicker / showPodcastPicker
+                              @State and the .fileImporter sheets they
+                              trigger. Re-scan calls
+                              library.scan(forceFullScan: true) so it
+                              bypasses the launch-time skip-scan check.
+        SilverCircleButtonStyle.swift
+                              Silver-gradient ButtonStyle used by every
+                              transport button (mini and full sheet) to
+                              match the desktop's transport disc and the
+                              app icon's metallic silver tone. Caller
+                              picks the diameter; foregroundStyle(.black)
+                              is forced inside so SF-Symbol glyphs
+                              render black against the silver.
+        LibraryListView.swift All Songs tab content (renamed from Library
+                              -- AppTab.library.title is "All Songs").
+                              Three states: pick-folder, scanning-with-
+                              progress-bar, populated list. Keeps a
+                              minimal showMusicPicker @State for the
+                              empty-state "Choose Music Folder…" button;
+                              the trailing menu's "Change music folder…"
+                              has its own picker via the shared
+                              .libraryActionsToolbar() modifier.
         ArtistsView.swift     Artists tab + ArtistDetailView.
         AlbumsView.swift      Albums tab + AlbumDetailView, with a
                               representative-track artwork thumbnail.
+        PodcastsView.swift    Podcasts tab + PodcastDetailView, grouped
+                              by track.podcast.
         SearchView.swift      Search tab; .searchable filters tracks by
                               title / artist / album live.
         TrackRow.swift        Pure-presentation row used by every track
-                              list (Library, Artist, Album, Search).
+                              list (All Songs, Artist, Album, Podcast,
+                              Search). Speaker glyph next to the title
+                              indicates the currently-playing track.
         TrackRowButton.swift  Button wrapper that, on tap, sets the queue
                               to the visible-track slice and starts
                               playback at the tapped row. Long-press
                               .contextMenu surfaces Play Next /
                               Add to Queue / Look up / Edit Info.... Owns
                               the .sheet that hosts EditInfoView.
+                              .alignmentGuide(.listRowSeparatorLeading)
+                              pins the row separator to the cell's
+                              leading edge (matches album-art left).
         EditInfoView.swift    Per-track metadata editor (Form). "Look up
                               on iTunes" kicks LookupController.enqueue
                               with the currently-edited fields; .onChange
@@ -154,26 +254,67 @@ stylus-ios/
                               LibraryStore.save which round-trips through
                               Stylus_StylSave (load-then-overwrite-then-
                               save preserves untouched disk fields).
-        EmptyStateView.swift  iOS-16-compatible stand-in for SwiftUI 17's
-                              ContentUnavailableView.
-        TransportBar.swift    Bottom strip with art / title / play-pause /
-                              next. Tappable art+title region calls the
-                              onTap closure (parent presents the sheet).
-                              Hidden when nothing is current.
-        NowPlayingSheet.swift Full-screen sheet: large art + title + scrubber
-                              + big transport. Scrubber uses a local @State
-                              that mirrors audio.currentTime when not being
-                              dragged, so user scrubbing doesn't fight with
-                              the 0.25 s currentTime ticker.
-        CircleSlider.swift    Circle-thumbed scrubber used in the Now
-                              Playing sheet; thumb / track / shadow spring
-                              up while dragging.
+        EmptyStateView.swift  Centred empty-state block (icon + title +
+                              optional message), used by Search and the
+                              other tabs when their list is empty.
+        TransportBar.swift    Bottom mini-player. Sticky drag handle at
+                              the top (white-on-grab feedback, location-
+                              based DragGesture in .global so the host's
+                              own offset doesn't feed back into the
+                              translation). Album art with a radial
+                              "played pie" veil that sweeps clockwise
+                              from 12 o'clock through the played
+                              fraction. Title block + small
+                              SilverCircleButtonStyle play/pause and
+                              skip on the right edge. Tap the info area
+                              or drag the handle up to lift the
+                              NowPlayingSheet (writes RootView's
+                              sheetY directly via the lift-drag
+                              callbacks).
+        NowPlayingSheet.swift Full-screen sheet: drag handle (sticky,
+                              outside the ScrollView) + ScrollView
+                              containing the artwork (with a collapsing-
+                              header treatment via .scaleEffect(.top) +
+                              sticky offset that pins the top of the art
+                              to the visible scroll-top while it shrinks
+                              to ¼ size, then scrolls normally) + title
+                              + scrubber + transport + Up Next. Sheet
+                              background is .secondarySystemBackground in
+                              an UnevenRoundedRectangle with 24-pt top
+                              corners; .ignoresSafeArea(edges: .bottom)
+                              so the sheet stops below the top safe-area
+                              inset and the system status bar renders
+                              over the underlying tab. Auto-scrolls to
+                              "npTop" on .onAppear so re-mounting the
+                              sheet (tap, drag-up, scenePhase auto-
+                              present) starts at the artwork.
+        CircleSlider.swift    Circle-thumbed scrubber. DragGesture is
+                              attached ONLY to the thumb itself (not the
+                              track) so tapping somewhere on the bar
+                              doesn't jump the thumb -- the user must
+                              grab and drag. Uses translation +
+                              captured-at-start initialValue to avoid
+                              compounding drift from reading the live
+                              (mutating) value.
       Resources/
         Info.plist            UIFileSharingEnabled (for On My iPhone surface),
                               LSSupportsOpeningDocumentsInPlace,
-                              UIBackgroundModes=[audio].
-        Assets.xcassets       AppIcon (full-bleed iOS variant generated by
-                              External/stylus/resources/make_app_icon.py).
+                              UIBackgroundModes=[audio],
+                              UILaunchStoryboardName=LaunchScreen.
+        LaunchScreen.storyboard
+                              Launch storyboard. Centred 180x180
+                              UIImageView with image=SplashIcon, on a
+                              systemBackground root view. Rounded
+                              corners are NOT set as a runtime
+                              attribute (launch screens reject those);
+                              they're baked into SplashIcon.png itself
+                              as transparent alpha.
+        Assets.xcassets       AppIcon (square 1024x1024 -- iOS rounds
+                              the home-screen icon for us) and
+                              SplashIcon (a copy of the icon with
+                              rounded corners baked into the alpha
+                              channel via a one-shot Pillow script for
+                              the launch screen + SwiftUI splash).
 ```
 
 ## Key patterns
@@ -378,6 +519,133 @@ between "5-10 s ⌘R" and "10-20 s ⌘R" for Swift-only iterations.
 If you change CMake-side build options (e.g. add a new source to the cmake
 target's source list, or change `-DCMAKE_*` flags), `make clean` once to
 force the slow path; the fast path doesn't watch project-config files.
+
+### NowPlayingSheet sheetY model
+RootView owns ONE state variable that drives every visible motion of
+the Now Playing sheet:
+
+- `sheetY = 0`        → sheet fully expanded (top edge at top safe-
+                        area inset; rounded corners visible above)
+- `sheetY = screenH`  → sheet entirely off-screen below; the mini
+                        TransportBar at the bottom is the only thing
+                        showing.
+
+Both directions of motion write to the same value:
+
+- The TransportBar's lift drag (info-area / drag-handle gestures) reports
+  `value.location.y` in `.global` coords; RootView writes
+  `sheetY = locationY - safeTop` so the sheet's top tracks the finger
+  exactly with no constant delta.
+- The sheet's drag-handle `handleDrag` writes
+  `sheetY = value.translation.height` so dragging the handle down
+  pulls the sheet down 1:1.
+- Tap-to-present and the close button just `withAnimation { sheetY = 0 }`
+  / `screenH`.
+
+Reading translation in `.global` matters: the host views move with
+`sheetY`, so a `.local` gesture would feed back on itself (translation
+shrinks as the host shifts, which shrinks sheetY, which un-shifts the
+host -- the vertical jitter we hit early on).
+
+`screenH` and `safeTop` are captured by a background `GeometryReader`
+on RootView's body and updated on size changes (orientation, etc.).
+
+### Custom navigation: hidden tab bar + title-menu chevron
+The system tab bar is hidden via `.toolbar(.hidden, for: .tabBar)` on
+each NavigationStack inside the TabView (the TabView is kept so each
+tab's drill-down state, scroll position, and search query survive
+flipping tabs from the title-menu chevron). Tab switching is via the
+`.tabTitleMenu(_ title:)` modifier in TabNavigation.swift, which adds
+a `ToolbarItem(placement: .principal)` containing a UIKit-backed
+`UIButton`. The button:
+
+1. Has `showsMenuAsPrimaryAction = true` and a `UIMenu` set ONCE in
+   `makeUIView` whose only child is a `UIDeferredMenuElement.uncached`.
+2. The deferred element captures the `Coordinator` weakly. When the
+   user taps the button, UIKit invokes the deferred element, which
+   reads `availableTabs` + `onSelect` from the Coordinator and builds
+   a fresh list of `UIAction`s.
+3. `updateUIView` only writes the latest props into the Coordinator
+   and refreshes the title configuration. **It never reassigns
+   `button.menu`.**
+
+This is the workaround for SwiftUI `Menu` lifecycle issues inside
+`.toolbar` slots that re-render frequently (during library scan, for
+example). A SwiftUI Menu in the same slot got torn down and rebuilt
+on every parent re-render -- the visible flicker plus the
+"updateVisibleMenuWithBlock while no context menu is visible"
+log spam. Same pattern is used for the trailing
+`LibraryActionsToolbar` button.
+
+The button writes `tabRouter?.current = tab` inside a
+`DispatchQueue.main.async` block so the menu has time to finish its
+dismissal animation before the tab actually switches.
+
+### TabRouter: custom env key, not @EnvironmentObject
+`TabRouter` is exposed via `.environment(\.tabRouter, router)` and
+read via `@Environment(\.tabRouter) var tabRouter: TabRouter?` --
+NOT `@EnvironmentObject`. Reading via the custom env key gets us a
+class reference we can mutate (`tabRouter?.current = tab`) without
+subscribing to its `@Published current`. Subscribing would re-render
+every consumer on every tab switch, defeating the
+title-menu's UIDeferredMenuElement stability (since the
+modifier itself would re-evaluate and rebuild the toolbar item).
+
+RootView still holds the router as a `@StateObject` so the TabView
+binds its selection to `$router.current` (binding usage doesn't pull
+in @Published subscription either).
+
+### Skip-scan optimisation
+`LibraryStore.scan(forceFullScan: false)` is the launch path; the
+"Re-scan folders" menu item passes `forceFullScan: true`. After
+`Stylus_LibraryLoadCache` synchronously repopulates `tracks` from the
+on-disk cache, we run `countUniqueAudioFiles(in:)`: a recursive
+`FileManager.enumerator` over the music + podcast roots that adds
+each canonical path to a `Set<String>`. The Set de-dupes files that
+sit under both roots simultaneously (the typical "music folder
+contains a Podcasts subfolder" layout, where a sum-of-counts would
+double-count). If the de-duped count matches `tracks.count`, the
+slow metadata-reading scan (`Stylus_LibraryStartScan`) is skipped
+entirely; otherwise we proceed with the full scan.
+
+`countAudioFiles(at:)` (the single-folder version) is still used by
+the parallel pre-count pass that drives the scanning progress bar.
+
+### Splash + launch storyboard
+Launch sequence:
+
+1. iOS shows `LaunchScreen.storyboard` (image="SplashIcon", 180x180,
+   centred on systemBackground). Launch storyboards reject
+   `userDefinedRuntimeAttributes`, so the rounded corners are baked
+   into `SplashIcon.png` itself: a one-shot Pillow script masks the
+   alpha channel with a `rounded_rectangle(radius=205px)` (≈36 pt at
+   the 1024-source / 180-display ratio).
+2. `SplashView` mounts in SwiftUI, displaying the same icon at the
+   same size + corner radius for `1.6 s`, then fades to RootView.
+   `.ignoresSafeArea()` is on the ZStack itself (not just the
+   background `Color`) so the centre matches the storyboard's
+   full-window centring exactly -- otherwise SwiftUI would centre
+   within the safe area and the icon would shift down ~30 pt at the
+   storyboard → SwiftUI handoff on Dynamic Island devices.
+3. RootView is mounted with all environment objects already attached
+   at the WindowGroup level. The library scan kicked off in
+   `StylusApp.swift`'s `.task` has already loaded the cache (and
+   possibly run the skip-scan check) by the time the splash fades,
+   so the first list view shows tracks immediately.
+
+`AppIcon.png` is left untouched (square) so the home-screen icon
+still gets iOS's normal rounded mask; only `SplashIcon.png` has
+baked-in alpha rounding.
+
+### scenePhase auto-present
+`RootView` watches `@Environment(\.scenePhase)` and calls
+`presentSheet()` on every transition to `.active` if a track is
+loaded. `presentSheet()` early-returns when the sheet is already
+visible (`sheetY < screenH * 0.5`) so this is idempotent -- a
+brief Control-Center pull-down + dismiss is a no-op. The aggressive
+behaviour (no `wasInBackground` gate) means a dynamic-island /
+lock-screen tap that brings the user back to the app lands them
+directly on the full sheet, which is the desired UX.
 
 ### Submodule update workflow
 The desktop submodule is pinned to a specific commit. It does not auto-update.
