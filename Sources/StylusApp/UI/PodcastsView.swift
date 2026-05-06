@@ -30,13 +30,15 @@ struct PodcastsView: View
                 // SwiftUI's default content-derived inset.
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .hideFirstRowSeparator(index == 0)
+                .tracksContextMenu(suggestedName: { row.name })
+                                  { episodes(forShow: row.name) }
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
         .listSectionSeparator(.hidden)
         .tabTitleMenu("Podcasts")
-        .libraryActionsToolbar()
+        .libraryActionsToolbar(scope: .podcasts)
         .navigationDestination(for: String.self)
         { show in
             PodcastDetailView(show: show)
@@ -62,6 +64,24 @@ struct PodcastsView: View
         }
         return counts.map { ShowRow(name: $0.key, count: $0.value) }
                      .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    // Episodes of one show, ordered the same way PodcastDetailView
+    // displays them (highest episode number first, then by title).
+    fileprivate func episodes(forShow show: String) -> [Track]
+    {
+        library.tracks
+            .filter
+            { $0.isPodcast
+              && ($0.podcast == show || ($0.podcast.isEmpty && show == "Unknown")) }
+            .sorted
+            { lhs, rhs in
+                if lhs.trackNumber != rhs.trackNumber
+                {
+                    return lhs.trackNumber > rhs.trackNumber
+                }
+                return lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
+            }
     }
 
     private struct ShowRow

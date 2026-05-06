@@ -5,7 +5,7 @@ import SwiftUI
 // returns via the .topBarLeading "Home" button on every non-Home tab.
 enum AppTab: String, CaseIterable, Identifiable
 {
-    case home, library, artists, albums, genres, podcasts, search
+    case home, library, artists, albums, genres, playlists, podcasts, search
 
     var id: String { rawValue }
 
@@ -13,27 +13,36 @@ enum AppTab: String, CaseIterable, Identifiable
     {
         switch self
         {
-        case .home:     return "My Library"
-        case .library:  return "All Songs"
-        case .artists:  return "Artists"
-        case .albums:   return "Albums"
-        case .genres:   return "Genres"
-        case .podcasts: return "Podcasts"
-        case .search:   return "Search"
+        case .home:      return "My Library"
+        case .library:   return "All Songs"
+        case .artists:   return "Artists"
+        case .albums:    return "Albums"
+        case .genres:    return "Genres"
+        case .playlists: return "Playlists"
+        case .podcasts:  return "Podcasts"
+        case .search:    return "Search"
         }
     }
 
     var systemImage: String
     {
+        // Icons standardised on the .fill family wherever a fill
+        // variant exists. `music.note.list` and `magnifyingglass`
+        // are inherently fill-less (the first is already a multi-
+        // glyph staff, the second is a universally-recognised
+        // search outline) and stay as-is. The rest match in weight
+        // so the home-page rows read as a unified set rather than
+        // the previous outline/fill mix the user got feedback on.
         switch self
         {
-        case .home:     return "house.fill"
-        case .library:  return "music.note.list"
-        case .artists:  return "music.mic"
-        case .albums:   return "square.stack"
-        case .genres:   return "tag.fill"
-        case .podcasts: return "mic"
-        case .search:   return "magnifyingglass"
+        case .home:      return "house.fill"
+        case .library:   return "music.note.list"
+        case .artists:   return "person.2.fill"
+        case .albums:    return "square.stack.fill"
+        case .genres:    return "tag.fill"
+        case .playlists: return "list.bullet.rectangle.fill"
+        case .podcasts:  return "mic.fill"
+        case .search:    return "magnifyingglass"
         }
     }
 }

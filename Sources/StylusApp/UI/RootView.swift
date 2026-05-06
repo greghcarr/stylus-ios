@@ -156,11 +156,12 @@ struct RootView: View
     {
         switch tab
         {
-        case .home:     HomeView()
-        case .library:  LibraryListView()
-        case .artists:  ArtistsView()
-        case .albums:   AlbumsView()
-        case .genres:   GenresView()
+        case .home:      HomeView()
+        case .library:   LibraryListView()
+        case .artists:   ArtistsView()
+        case .albums:    AlbumsView()
+        case .genres:    GenresView()
+        case .playlists: PlaylistsView()
         case .podcasts:
             if folder.podcastFolderURL != nil
             {
@@ -172,7 +173,7 @@ struct RootView: View
                 // Podcasts row when no podcast folder is set.
                 HomeView()
             }
-        case .search:   SearchView()
+        case .search:    SearchView()
         }
     }
 

@@ -32,13 +32,14 @@ struct AlbumsView: View
                 // SwiftUI's default content-derived inset.
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .hideFirstRowSeparator(index == 0)
+                .tracksContextMenu(suggestedName: { key.album })
+                                  { tracks(forAlbum: key) }
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
         .listSectionSeparator(.hidden)
         .tabTitleMenu("Albums")
-        .libraryActionsToolbar()
         .navigationDestination(for: AlbumKey.self)
         { key in
             AlbumDetailView(key: key)
@@ -77,6 +78,25 @@ struct AlbumsView: View
     private func representativePath(for key: AlbumKey) -> String?
     {
         library.tracks.first(where: { $0.album == key.album && $0.artist == key.artist })?.filePath
+    }
+
+    // Tracks of one album, ordered the same way AlbumDetailView
+    // displays them (track number then title). Used by the
+    // tracksContextMenu so "Play Next" / "Add to Queue" / "Add to
+    // Playlist..." on an album row queues the album in playback
+    // order.
+    fileprivate func tracks(forAlbum key: AlbumKey) -> [Track]
+    {
+        library.tracks
+            .filter { !$0.isPodcast && $0.album == key.album && $0.artist == key.artist }
+            .sorted
+            { lhs, rhs in
+                if lhs.trackNumber != rhs.trackNumber
+                {
+                    return lhs.trackNumber < rhs.trackNumber
+                }
+                return lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
+            }
     }
 }
 

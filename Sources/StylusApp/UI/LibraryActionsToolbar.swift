@@ -1,20 +1,38 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// Reusable toolbar attached to every top-level tab root (All Music
-// / Artists / Albums / Podcasts / Search). Provides the trailing
-// "ellipsis.circle" overflow menu (rescan, change folder,
-// analyse, look up artwork...) that previously lived only in the
-// All Music view, plus the .fileImporter sheets it triggers, plus
-// the scan-progress spinner that replaces the menu while the
-// background scan is running.
-//
-// Placed here so adding a tab is one place: the new tab view just
-// needs `.libraryActionsToolbar()` next to its `.tabTitleMenu(...)`.
+// Per-tab scope for the trailing overflow menu's contents. Different
+// tabs care about different subsets of the library-management
+// actions; this lets each tab dial in only the items the user
+// actually expects to find there.
+enum LibraryActionsScope
+{
+    // My Library (HomeView): full set -- change music folder,
+    // change/choose/remove podcasts folder, re-scan folders.
+    case home
+
+    // All Songs (LibraryListView): just music-related items --
+    // change music folder, re-scan folders.
+    case music
+
+    // Podcasts: just podcast-related items -- change podcasts
+    // folder, re-scan folders. The Podcasts tab is only visible
+    // when a podcast folder is already set, so we don't need a
+    // "choose" affordance here.
+    case podcasts
+}
+
+// Reusable trailing-toolbar modifier that hosts the scope-aware
+// overflow menu plus the scan-progress spinner that replaces the
+// menu while the background scan is running. Tabs that should not
+// expose any of these actions (Artists / Albums / Genres /
+// Playlists / Search) simply don't apply this modifier.
 struct LibraryActionsToolbar: ViewModifier
 {
-    @EnvironmentObject var library:  LibraryStore
-    @EnvironmentObject var folder:   MusicFolderStore
+    let scope: LibraryActionsScope
+
+    @EnvironmentObject var library: LibraryStore
+    @EnvironmentObject var folder:  MusicFolderStore
 
     @State private var showMusicPicker:   Bool = false
     @State private var showPodcastPicker: Bool = false
@@ -89,6 +107,7 @@ struct LibraryActionsToolbar: ViewModifier
                 // menu is visible" log spam). Same pattern as the
                 // tab title menu in TabNavigation.swift.
                 LibraryActionsButton(
+                    scope:                 scope,
                     podcastsFolderSet:     folder.podcastFolderURL != nil,
                     // Re-scan is always a force-full-scan: the user
                     // is explicitly asking us to re-read every
@@ -107,9 +126,9 @@ struct LibraryActionsToolbar: ViewModifier
 
 extension View
 {
-    func libraryActionsToolbar() -> some View
+    func libraryActionsToolbar(scope: LibraryActionsScope) -> some View
     {
-        modifier(LibraryActionsToolbar())
+        modifier(LibraryActionsToolbar(scope: scope))
     }
 }
 
@@ -123,6 +142,7 @@ extension View
 // the same flicker the title menu used to have.
 private struct LibraryActionsButton: UIViewRepresentable
 {
+    let scope:                 LibraryActionsScope
     let podcastsFolderSet:     Bool
 
     let onRescan:              () -> Void
@@ -138,13 +158,14 @@ private struct LibraryActionsButton: UIViewRepresentable
 
     final class Coordinator
     {
-        var podcastsFolderSet:     Bool       = false
+        var scope:                 LibraryActionsScope = .home
+        var podcastsFolderSet:     Bool                = false
 
-        var onRescan:              () -> Void = {}
-        var onChangeMusicFolder:   () -> Void = {}
-        var onChangePodcastFolder: () -> Void = {}
-        var onRemovePodcastFolder: () -> Void = {}
-        var onChoosePodcastFolder: () -> Void = {}
+        var onRescan:              () -> Void          = {}
+        var onChangeMusicFolder:   () -> Void          = {}
+        var onChangePodcastFolder: () -> Void          = {}
+        var onRemovePodcastFolder: () -> Void          = {}
+        var onChoosePodcastFolder: () -> Void          = {}
 
         // Builds the menu structure from the Coordinator's current
         // state. Called by the UIDeferredMenuElement each time the
@@ -154,44 +175,64 @@ private struct LibraryActionsButton: UIViewRepresentable
         {
             var items: [UIMenuElement] = []
 
-            items.append(UIAction(
-                title: "Change music folder…",
+            let changeMusic = UIAction(
+                title: "Change music folder\u{2026}",
                 image: UIImage(systemName: "music.note")
             )
-            { [weak self] _ in self?.onChangeMusicFolder() })
+            { [weak self] _ in self?.onChangeMusicFolder() }
 
-            if podcastsFolderSet
-            {
-                items.append(UIAction(
-                    title: "Change podcasts folder…",
-                    image: UIImage(systemName: "mic")
-                )
-                { [weak self] _ in self?.onChangePodcastFolder() })
+            let changePodcasts = UIAction(
+                title: "Change podcasts folder\u{2026}",
+                image: UIImage(systemName: "mic")
+            )
+            { [weak self] _ in self?.onChangePodcastFolder() }
 
-                items.append(UIAction(
-                    title:      "Remove podcasts folder",
-                    image:      UIImage(systemName: "minus.circle"),
-                    attributes: .destructive
-                )
-                { [weak self] _ in self?.onRemovePodcastFolder() })
-            }
-            else
-            {
-                items.append(UIAction(
-                    title: "Choose podcasts folder…",
-                    image: UIImage(systemName: "mic.badge.plus")
-                )
-                { [weak self] _ in self?.onChoosePodcastFolder() })
-            }
+            let choosePodcasts = UIAction(
+                title: "Choose podcasts folder\u{2026}",
+                image: UIImage(systemName: "mic.badge.plus")
+            )
+            { [weak self] _ in self?.onChoosePodcastFolder() }
 
-            // Re-scan sits at the bottom of the menu so the folder-
-            // management entries (which the user reaches for less
-            // often) don't push it out of sight.
-            items.append(UIAction(
+            let removePodcasts = UIAction(
+                title:      "Remove podcasts folder",
+                image:      UIImage(systemName: "minus.circle"),
+                attributes: .destructive
+            )
+            { [weak self] _ in self?.onRemovePodcastFolder() }
+
+            // Re-scan sits at the bottom of the menu in every
+            // scope so the folder-management entries (which the
+            // user reaches for less often) don't push it out of
+            // sight.
+            let rescan = UIAction(
                 title: "Re-scan folders",
                 image: UIImage(systemName: "arrow.triangle.2.circlepath")
             )
-            { [weak self] _ in self?.onRescan() })
+            { [weak self] _ in self?.onRescan() }
+
+            switch scope
+            {
+            case .home:
+                items.append(changeMusic)
+                if podcastsFolderSet
+                {
+                    items.append(changePodcasts)
+                    items.append(removePodcasts)
+                }
+                else
+                {
+                    items.append(choosePodcasts)
+                }
+                items.append(rescan)
+
+            case .music:
+                items.append(changeMusic)
+                items.append(rescan)
+
+            case .podcasts:
+                items.append(changePodcasts)
+                items.append(rescan)
+            }
 
             return items
         }
@@ -214,6 +255,7 @@ private struct LibraryActionsButton: UIViewRepresentable
     func updateUIView(_ button: UIButton, context: Context)
     {
         let coord = context.coordinator
+        coord.scope                 = scope
         coord.podcastsFolderSet     = podcastsFolderSet
         coord.onRescan              = onRescan
         coord.onChangeMusicFolder   = onChangeMusicFolder

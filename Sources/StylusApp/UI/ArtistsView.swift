@@ -22,13 +22,14 @@ struct ArtistsView: View
                     }
                 }
                 .hideFirstRowSeparator(index == 0)
+                .tracksContextMenu(suggestedName: { row.name })
+                                  { tracks(forArtist: row.name) }
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
         .listSectionSeparator(.hidden)
         .tabTitleMenu("Artists")
-        .libraryActionsToolbar()
         .navigationDestination(for: String.self)
         { artist in
             ArtistDetailView(artist: artist)
@@ -54,6 +55,27 @@ struct ArtistsView: View
         }
         return counts.map { ArtistRow(name: $0.key, count: $0.value) }
                      .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    // Same album -> trackNumber -> title ordering ArtistDetailView
+    // uses, so a "Play Next" / "Add to Queue" from the artist row
+    // matches the order the user would see if they drilled in.
+    fileprivate func tracks(forArtist artist: String) -> [Track]
+    {
+        library.tracks
+            .filter { !$0.isPodcast && $0.artist == artist }
+            .sorted
+            { lhs, rhs in
+                if lhs.album.localizedCaseInsensitiveCompare(rhs.album) != .orderedSame
+                {
+                    return lhs.album.localizedCaseInsensitiveCompare(rhs.album) == .orderedAscending
+                }
+                if lhs.trackNumber != rhs.trackNumber
+                {
+                    return lhs.trackNumber < rhs.trackNumber
+                }
+                return lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
+            }
     }
 
     private struct ArtistRow
@@ -139,8 +161,16 @@ struct ArtistDetailView: View
         {
             NavigationLink(value: ArtistAllSongsKey(artist: artist))
             {
-                HStack
+                HStack(spacing: 12)
                 {
+                    // Same 44-pt slot the album thumbnails below use,
+                    // so the All Albums row's text aligns with the
+                    // album-name text rather than hugging the leading
+                    // edge.
+                    Image(systemName: "square.stack.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
                     Text("All Albums")
                     Spacer()
                     Text("\(allTracks.count)")
@@ -151,26 +181,53 @@ struct ArtistDetailView: View
             // The All Albums row is the first child of this list,
             // so it owns the top-edge separator suppression.
             .hideFirstRowSeparator(true)
+            .tracksContextMenu(suggestedName: { artist }) { allTracks }
 
             ForEach(albumNames, id: \.self)
             { albumName in
                 NavigationLink(value: AlbumKey(artist: artist, album: albumName))
                 {
-                    HStack
-                    {
-                        Text(albumName)
-                            .lineLimit(1)
-                        Spacer()
-                        Text("\(trackCount(forAlbum: albumName))")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    ArtistAlbumRow(
+                        artist:             artist,
+                        album:              albumName,
+                        trackCount:         trackCount(forAlbum: albumName),
+                        representativePath: representativePath(for: albumName)
+                    )
                 }
+                .tracksContextMenu(suggestedName: { albumName })
+                                  { tracks(forAlbum: albumName) }
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
         .listSectionSeparator(.hidden)
+    }
+
+    // First track found for the given album by this artist. Used by
+    // ArtistAlbumRow as the source for the album-thumb artwork
+    // load -- the thumbnail cache keys on path, so any track from
+    // the album yields the same image.
+    private func representativePath(for albumName: String) -> String?
+    {
+        library.tracks.first(where:
+        { !$0.isPodcast && $0.artist == artist && $0.album == albumName })?
+            .filePath
+    }
+
+    // All tracks of one specific album (by this artist), sorted by
+    // track number then title -- same order AlbumDetailView uses.
+    private func tracks(forAlbum albumName: String) -> [Track]
+    {
+        library.tracks
+            .filter { !$0.isPodcast && $0.artist == artist && $0.album == albumName }
+            .sorted
+            { lhs, rhs in
+                if lhs.trackNumber != rhs.trackNumber
+                {
+                    return lhs.trackNumber < rhs.trackNumber
+                }
+                return lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
+            }
     }
 
     // Distinct non-empty album names tagged on this artist's tracks,
@@ -216,6 +273,65 @@ struct ArtistDetailView: View
                 }
                 return lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
             }
+    }
+}
+
+// Row used by ArtistDetailView's albumsList for each specific album
+// by the artist. Shows a 44-pt artwork thumbnail on the leading
+// edge, the album title in the middle, and the per-album track
+// count on the trailing edge. ArtworkCache shares state with every
+// other AlbumRow / TrackRow that loads this same path, so scrolling
+// is flash-free even on first paint.
+private struct ArtistAlbumRow: View
+{
+    let artist:             String
+    let album:              String
+    let trackCount:         Int
+    let representativePath: String?
+
+    @State private var artwork: UIImage?
+
+    var body: some View
+    {
+        HStack(spacing: 12)
+        {
+            artworkThumb
+            Text(album).lineLimit(1)
+            Spacer()
+            Text("\(trackCount)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .task(id: representativePath)
+        {
+            guard let p = representativePath else { return }
+            artwork = await loadThumbnail(for: p)
+        }
+    }
+
+    @ViewBuilder
+    private var artworkThumb: some View
+    {
+        Group
+        {
+            if let artwork = artwork
+            {
+                Image(uiImage: artwork)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            }
+            else
+            {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.15))
+                    .overlay(
+                        Image(systemName: "square.stack")
+                            .foregroundStyle(.secondary)
+                    )
+            }
+        }
+        .frame(width: 44, height: 44)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
 

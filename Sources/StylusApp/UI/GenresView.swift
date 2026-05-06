@@ -34,13 +34,14 @@ struct GenresView: View
                     }
                 }
                 .hideFirstRowSeparator(index == 0)
+                .tracksContextMenu(suggestedName: { row.name })
+                                  { tracks(forGenre: row.name) }
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
         .listSectionSeparator(.hidden)
         .tabTitleMenu("Genres")
-        .libraryActionsToolbar()
         .navigationDestination(for: GenreKey.self)
         { key in
             GenreDetailView(genre: key.name)
@@ -71,6 +72,30 @@ struct GenresView: View
         }
         return counts.map { GenreRow(name: $0.key, count: $0.value) }
                      .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    // Tracks of one genre, ordered the same way GenreDetailView
+    // displays them (artist -> album -> trackNumber -> title).
+    fileprivate func tracks(forGenre genre: String) -> [Track]
+    {
+        library.tracks
+            .filter { !$0.isPodcast && $0.genre == genre }
+            .sorted
+            { lhs, rhs in
+                if lhs.artist.localizedCaseInsensitiveCompare(rhs.artist) != .orderedSame
+                {
+                    return lhs.artist.localizedCaseInsensitiveCompare(rhs.artist) == .orderedAscending
+                }
+                if lhs.album.localizedCaseInsensitiveCompare(rhs.album) != .orderedSame
+                {
+                    return lhs.album.localizedCaseInsensitiveCompare(rhs.album) == .orderedAscending
+                }
+                if lhs.trackNumber != rhs.trackNumber
+                {
+                    return lhs.trackNumber < rhs.trackNumber
+                }
+                return lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
+            }
     }
 
     private struct GenreRow

@@ -59,29 +59,45 @@ final class PlayQueue: ObservableObject
     // start there).
     func insertNext(_ track: Track)
     {
+        insertNext([track])
+    }
+
+    // Inserts a batch of tracks right after the current one, preserving
+    // the input order. Used by group-row context menus (long-press an
+    // album / artist / genre / playlist row -> "Play Next").
+    func insertNext(_ newTracks: [Track])
+    {
+        guard !newTracks.isEmpty else { return }
         if tracks.isEmpty
         {
-            tracks       = [track]
+            tracks       = newTracks
             currentIndex = 0
         }
         else
         {
             let target = min(currentIndex + 1, tracks.count)
-            tracks.insert(track, at: target)
+            tracks.insert(contentsOf: newTracks, at: target)
         }
     }
 
     // Appends a track at the end of the queue.
     func append(_ track: Track)
     {
+        append([track])
+    }
+
+    // Appends a batch of tracks at the end, preserving input order.
+    func append(_ newTracks: [Track])
+    {
+        guard !newTracks.isEmpty else { return }
         if tracks.isEmpty
         {
-            tracks       = [track]
+            tracks       = newTracks
             currentIndex = 0
         }
         else
         {
-            tracks.append(track)
+            tracks.append(contentsOf: newTracks)
         }
     }
 }

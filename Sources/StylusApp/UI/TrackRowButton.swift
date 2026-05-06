@@ -8,11 +8,13 @@ struct TrackRowButton: View
     let track:         Track
     let visibleTracks: [Track]
 
-    @EnvironmentObject var queue:  PlayQueue
-    @EnvironmentObject var audio:  AudioPlayer
-    @EnvironmentObject var lookup: LookupController
+    @EnvironmentObject var queue:     PlayQueue
+    @EnvironmentObject var audio:     AudioPlayer
+    @EnvironmentObject var lookup:    LookupController
+    @EnvironmentObject var playlists: PlaylistStore
 
-    @State private var showEdit = false
+    @State private var showEdit          = false
+    @State private var showAddToPlaylist = false
 
     var body: some View
     {
@@ -67,6 +69,16 @@ struct TrackRowButton: View
                 Label("Add to Queue", systemImage: "text.append")
             }
 
+            Button
+            {
+                showAddToPlaylist = true
+            }
+            label:
+            {
+                Label("Add to Playlist\u{2026}",
+                      systemImage: "text.badge.plus")
+            }
+
             Divider()
 
             Button
@@ -114,6 +126,10 @@ struct TrackRowButton: View
         .sheet(isPresented: $showEdit)
         {
             EditInfoView(trackPath: track.filePath)
+        }
+        .sheet(isPresented: $showAddToPlaylist)
+        {
+            AddToPlaylistSheet(tracks: [track])
         }
     }
 

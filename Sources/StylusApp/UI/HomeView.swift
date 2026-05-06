@@ -52,7 +52,7 @@ struct HomeView: View
         .listStyle(.plain)
         .listSectionSeparator(.hidden)
         .tabTitleMenu(AppTab.home.title)
-        .libraryActionsToolbar()
+        .libraryActionsToolbar(scope: .home)
     }
 
     // All non-Home tabs the user can reach from Home. Podcasts is

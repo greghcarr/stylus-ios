@@ -127,7 +127,49 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
   square; a custom `preview:` view with explicit padding +
   `frame(maxWidth: 360)` gives consistent breathing room across
   rows in portrait while shrinking gracefully in landscape.
-- Phase 7+ (playlists, polish):
+- Phase 7a (playlists CRUD + drag-and-drop reorder): done.
+  PlaylistStore persists playlists as JSON in
+  Library/Application Support/Stylus/playlists.json. Schema
+  (id / name / tracks) matches the desktop's
+  Stylus::PlaylistStore byte-for-byte so the future sync engine
+  just needs to move the file and re-base music-folder paths
+  between the two roots. Playlists tab on My Library between
+  Genres and Podcasts; PlaylistsView lists existing playlists
+  with swipe-to-delete + drag-to-reorder, "New Playlist" sits
+  below the list, native alert prompts for the name with
+  contextual pre-fill from the long-press source. Playlist-
+  DetailView shows the playlist's tracks via TrackRowButton,
+  with EditButton-driven swipe-delete + drag-reorder that
+  translates between visible-track indices and the underlying
+  trackPaths array (so orphaned-but-still-stored paths don't
+  shift when the user reorders). Trailing menu has Rename
+  Playlist... + Delete Playlist; long-press on a playlist row
+  in PlaylistsView gets a fourth destructive Delete entry too.
+  Tap any playlist row to drill in; tap a track to play from
+  there to the end of the playlist.
+- Phase 7b (group-row "Play Next / Add to Queue / Add to
+  Playlist..." context menus): done. New TracksContextMenu
+  modifier applied to album rows (AlbumsView + ArtistDetail-
+  View albumsList), artist rows, genre rows, podcast show
+  rows, and playlist rows. Each call site provides a tracksFor
+  closure (lazily evaluated at action time, ordered the way the
+  matching detail view orders its tracks) and a suggestedName
+  closure that pre-fills the New Playlist alert with the
+  group's natural name (album title, artist, etc.). Playlist-
+  row variant uses an additionalItems trailing closure to add
+  a destructive "Delete Playlist" entry below the standard
+  three. PlayQueue gained insertNext([Track]) / append([Track])
+  overloads to support batch inserts.
+- Phase 7c (scoped overflow menu): done. The trailing
+  ellipsis-circle menu's contents are now per-tab: Home shows
+  the full set (change music / change-or-choose-or-remove
+  podcasts / re-scan), All Songs shows just music + re-scan,
+  Podcasts shows just podcasts + re-scan. Artists / Albums /
+  Genres / Playlists / Search don't apply
+  .libraryActionsToolbar(scope:) at all so the menu icon is
+  hidden and inaccessible there. Driven by a LibraryActions-
+  Scope enum that the Coordinator switches on in buildMenu().
+- Phase 7+ (sync engine, ipad polish):
   pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 
 ## Build
@@ -204,6 +246,19 @@ stylus-ios/
                               cache-then-scan flow, scan progress counters.
                               updateTrack(_:) is called by AnalysisController
                               to refresh BPM / key in-place without a rescan.
+        Playlist.swift        Codable struct mirroring the desktop's
+                              `Stylus::Playlist` JSON schema (id / name /
+                              tracks). Round-trips byte-for-byte across
+                              both sides so the future sync engine just
+                              moves the file and re-bases music-folder
+                              paths.
+        PlaylistStore.swift   @MainActor ObservableObject persisting
+                              playlists to Library/Application Support/
+                              Stylus/playlists.json. CRUD for playlists,
+                              add-tracks, reorder both playlists and
+                              tracks-within-playlists. nextId derived
+                              from max(existing ids) + 1 on load -- no
+                              separate on-disk counter to keep in sync.
         MusicFolderStore.swift Holds the user-picked music folder URL,
                               persists it as a security-scoped bookmark.
         ArtworkCache.swift    NSCache of decoded UIImage keyed by file path,
@@ -254,17 +309,24 @@ stylus-ios/
                               under high-frequency parent re-renders
                               during library scan).
         LibraryActionsToolbar.swift
-                              Reusable .libraryActionsToolbar() modifier
-                              applied to every tab root. Trailing
-                              ellipsis-circle UIButton (also UIKit-backed
-                              via UIDeferredMenuElement, same lifecycle
-                              concern) hosts Change music folder /
-                              Change podcasts folder / Re-scan folders.
-                              Owns the showMusicPicker / showPodcastPicker
-                              @State and the .fileImporter sheets they
-                              trigger. Re-scan calls
-                              library.scan(forceFullScan: true) so it
-                              bypasses the launch-time skip-scan check.
+                              Per-tab trailing overflow menu, scoped via
+                              LibraryActionsScope (.home / .music /
+                              .podcasts). Home shows the full action set
+                              (change music / change-or-choose-or-remove
+                              podcasts / re-scan); All Songs and
+                              Podcasts show only their tab-relevant
+                              subsets. Tabs that should not expose any of
+                              these actions (Artists / Albums / Genres /
+                              Playlists / Search) simply don't apply
+                              the modifier, which keeps the trailing
+                              toolbar slot empty -- no menu icon visible.
+                              Trailing ellipsis-circle is UIKit-backed
+                              via UIDeferredMenuElement so the menu's
+                              UIContextMenuInteraction is set ONCE in
+                              makeUIView and survives the parent's
+                              frequent re-renders during library scan
+                              (a SwiftUI Menu in the same slot
+                              flickered).
         SilverCircleButtonStyle.swift
                               Silver-gradient ButtonStyle used by every
                               transport button (mini and full sheet) to
@@ -309,6 +371,33 @@ stylus-ios/
                               distinct non-empty genre names with
                               track counts; GenreKey wraps the genre
                               name as a typed nav value.
+        PlaylistsView.swift   Playlists tab + PlaylistDetailView +
+                              AddToPlaylistSheet + PlaylistKey nav
+                              wrapper. Top-level lists existing
+                              playlists (swipe-to-delete + drag-to-
+                              reorder + long-press for "Delete
+                              Playlist"); New Playlist row sits at
+                              the bottom of the list. Detail view
+                              renders the playlist's resolved tracks
+                              via TrackRowButton, with edit-mode
+                              drag-reorder that translates visible
+                              indices back to the underlying
+                              trackPaths array so orphans stay put.
+                              AddToPlaylistSheet takes [Track] (with
+                              a single-Track convenience init) and a
+                              suggestedName for the New Playlist
+                              prefill.
+        TracksContextMenu.swift
+                              .tracksContextMenu(suggestedName:
+                              tracksFor:) modifier providing the
+                              "Play Next / Add to Queue / Add to
+                              Playlist..." long-press actions on any
+                              row that represents a track group
+                              (album, artist, genre, podcast,
+                              playlist). Optional additionalItems
+                              ViewBuilder slot for per-callsite
+                              extras (used by playlist rows for the
+                              destructive Delete entry).
         PodcastsView.swift    Podcasts tab + PodcastDetailView, grouped
                               by track.podcast.
         SearchView.swift      Search tab; .searchable filters tracks by

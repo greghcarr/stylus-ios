@@ -43,7 +43,6 @@ struct SearchView: View
             }
         }
         .tabTitleMenu("Search")
-        .libraryActionsToolbar()
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
     }
 

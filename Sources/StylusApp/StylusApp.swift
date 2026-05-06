@@ -3,8 +3,9 @@ import SwiftUI
 @main
 struct StylusApp: App
 {
-    @StateObject private var folder  = MusicFolderStore()
-    @StateObject private var library = LibraryStore()
+    @StateObject private var folder    = MusicFolderStore()
+    @StateObject private var library   = LibraryStore()
+    @StateObject private var playlists = PlaylistStore()
     @StateObject private var queue:    PlayQueue
     @StateObject private var audio:    AudioPlayer
     @StateObject private var analysis: AnalysisController
@@ -43,6 +44,7 @@ struct StylusApp: App
             SplashView()
                 .environmentObject(folder)
                 .environmentObject(library)
+                .environmentObject(playlists)
                 .environmentObject(queue)
                 .environmentObject(audio)
                 .environmentObject(analysis)

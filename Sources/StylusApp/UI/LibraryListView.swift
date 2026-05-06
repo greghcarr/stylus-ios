@@ -27,7 +27,7 @@ struct LibraryListView: View
     {
         content
             .tabTitleMenu("All Songs")
-            .libraryActionsToolbar()
+            .libraryActionsToolbar(scope: .music)
             .fileImporter(
                 isPresented:         $showMusicPicker,
                 allowedContentTypes: [.folder]

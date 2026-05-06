@@ -183,7 +183,21 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       a custom `preview:` view at `frame(maxWidth: 360)` for
       consistent rounded-preview sizing in portrait that shrinks
       gracefully in landscape.
-- [ ] **Phase 7** Drag-and-drop playlist editing
+- [x] **Phase 7a** Playlists: create / rename / delete /
+      drag-and-drop reorder. PlaylistStore persists to JSON
+      matching the desktop's `Stylus::Playlist` schema for future
+      sync. Playlists tab on My Library; "Add to Playlist..."
+      added to TrackRowButton's contextMenu.
+- [x] **Phase 7b** Group-row context menu: long-press on any
+      album / artist / genre / podcast / playlist row exposes
+      Play Next / Add to Queue / Add to Playlist... operating on
+      every track in that group. Reusable `TracksContextMenu`
+      modifier; `AddToPlaylistSheet` pre-fills the New Playlist
+      name with the row's contextual title.
+- [x] **Phase 7c** Per-tab overflow menu scoping. Home shows the
+      full set; All Songs and Podcasts show only their relevant
+      subset; Artists / Albums / Genres / Playlists / Search
+      hide the overflow menu entirely.
 - [ ] **Phase 8** iPad NavigationSplitView, AirPlay, polish
 - [ ] **Phase 9** (desktop side) Cable + Wi-Fi sync engine via libimobiledevice
 - [ ] **Phase X** CarPlay - aspirational, gated on Apple's CarPlay Audio
