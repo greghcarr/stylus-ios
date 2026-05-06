@@ -82,7 +82,7 @@ struct EditInfoView: View
             }
             .onAppear { populateFromLibrary() }
             .onChange(of: library.tracks)
-            { _ in
+            {
                 if lookingUp
                 {
                     populateFromLibrary()

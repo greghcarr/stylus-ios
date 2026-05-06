@@ -64,9 +64,10 @@ struct LibraryListView: View
         let musicTracks = library.tracks.filter { !$0.isPodcast }
         return List
         {
-            ForEach(musicTracks)
-            { track in
+            ForEach(Array(musicTracks.enumerated()), id: \.element.id)
+            { (index, track) in
                 TrackRowButton(track: track, visibleTracks: musicTracks)
+                    .hideFirstRowSeparator(index == 0)
             }
             TransportBarBottomSpacer()
         }
@@ -74,11 +75,16 @@ struct LibraryListView: View
         // Hide the implicit section's top separator -- the thin line
         // above the first row that SwiftUI's plain list draws by
         // default.
-        .listSectionSeparator(.hidden, edges: .top)
+        .listSectionSeparator(.hidden)
     }
 
-    // Wraps an empty-state block so it lands at the horizontal centre of
-    // the screen regardless of the surrounding view's content insets.
+    // Wraps an empty-state block so it lands at the centre of the
+    // SCREEN regardless of the surrounding view's content insets.
+    // .ignoresSafeArea() is what does the screen-vs-content-area
+    // distinction: without it the nav bar above and TransportBar below
+    // squeeze the available area asymmetrically, so the geometric
+    // centre lands slightly below the screen's actual centre. See the
+    // matching note in EmptyStateView for the full reasoning.
     @ViewBuilder
     private func centered<C: View>(@ViewBuilder _ content: () -> C) -> some View
     {
@@ -90,6 +96,7 @@ struct LibraryListView: View
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
 
     @ViewBuilder

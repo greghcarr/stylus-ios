@@ -31,14 +31,15 @@ struct SearchView: View
             {
                 List
                 {
-                    ForEach(matches)
-                    { track in
+                    ForEach(Array(matches.enumerated()), id: \.element.id)
+                    { (index, track) in
                         TrackRowButton(track: track, visibleTracks: matches)
+                            .hideFirstRowSeparator(index == 0)
                     }
                     TransportBarBottomSpacer()
                 }
                 .listStyle(.plain)
-                .listSectionSeparator(.hidden, edges: .top)
+                .listSectionSeparator(.hidden)
             }
         }
         .tabTitleMenu("Search")

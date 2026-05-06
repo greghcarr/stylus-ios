@@ -134,11 +134,13 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       big transport)
 - [x] **Phase 3c** `MPNowPlayingInfoCenter` + lock-screen art + remote
       commands (lock screen, Control Center, AirPods, scrub)
-- [x] **Phase 4** All Songs / Artists / Albums / Search with drill-down
-      navigation. The default iOS tab bar is hidden in favour of a tap-
-      able title chevron (UIKit-backed `UIButton` + `UIDeferredMenuElement`)
-      so the bottom of the screen is reserved for the mini Now Playing
-      bar. (Playlists deferred to Phase 7.)
+- [x] **Phase 4** All Songs / Artists / Albums / Genres / Podcasts /
+      Search with drill-down navigation. RootView wraps everything in
+      a single `NavigationStack(path:)` whose root is `HomeView` (the
+      My Library entry list); each non-Home tab is a value-based push
+      destination, giving iOS's native slide-in animation. The default
+      iOS tab bar is hidden so the bottom of the screen is reserved
+      for the mini Now Playing bar. (Playlists deferred to Phase 7.)
 - [x] **Phase 4.5** Podcasts folder + tab. Pick a separate podcasts
       folder; podcast episodes are excluded from All Songs / Artists /
       Albums and surfaced in their own tab grouped by show.
@@ -163,6 +165,24 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       `scenePhase = .active` so dynamic-island / lock-screen taps
       land users on the full sheet immediately. Splash screen +
       launch storyboard for a no-flash launch.
+- [x] **Phase 6e** Genres tab + iTunes-style artist drilldown. New
+      `GenresView` lists distinct non-empty genres with track counts.
+      `ArtistDetailView` branches on the artist's distinct-album
+      count: 0 or 1 album drops straight to the track list, 2+
+      shows "All Albums" first followed by each album in
+      alphabetical order.
+- [x] **Phase 6f** Audio click fixes. AudioPlayer keeps the engine
+      running across track switches (eliminates the per-track
+      speaker-hardware click) and pre-fades the player node's volume
+      to 0 over 20 ms on user-initiated switches (eliminates the
+      mid-amplitude cutoff click on abrupt skip).
+- [x] **Phase 6g** Row tap feedback + context menu polish. Custom
+      `RowTapButtonStyle` provides scale + opacity dim + light
+      haptic on row press across the app. Long-press contextMenu
+      uses `.contentShape(.contextMenuPreview, RoundedRectangle)` +
+      a custom `preview:` view at `frame(maxWidth: 360)` for
+      consistent rounded-preview sizing in portrait that shrinks
+      gracefully in landscape.
 - [ ] **Phase 7** Drag-and-drop playlist editing
 - [ ] **Phase 8** iPad NavigationSplitView, AirPlay, polish
 - [ ] **Phase 9** (desktop side) Cable + Wi-Fi sync engine via libimobiledevice

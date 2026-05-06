@@ -244,6 +244,19 @@ struct TransportBar: View
         // 32 pt distance from the left.
         HStack(spacing: 8)
         {
+            // Backward skip mirrors the forward button on the right
+            // edge, sitting on the left of the play/pause centrepiece.
+            // Always enabled: AudioPlayer.playPrev restarts the
+            // current track when there's no previous queue entry, so
+            // the button has a meaningful action in every queue state.
+            Button { audio.playPrev() }
+            label:
+            {
+                Image(systemName: "backward.end.fill")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .buttonStyle(SilverCircleButtonStyle(size: 36))
+
             Button { audio.togglePlayPause() }
             label:
             {

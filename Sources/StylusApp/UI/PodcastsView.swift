@@ -8,8 +8,8 @@ struct PodcastsView: View
     {
         List
         {
-            ForEach(showRows, id: \.name)
-            { row in
+            ForEach(Array(showRows.enumerated()), id: \.element.name)
+            { (index, row) in
                 NavigationLink(value: row.name)
                 {
                     HStack
@@ -29,11 +29,12 @@ struct PodcastsView: View
                 // up with the show icon's left side instead of
                 // SwiftUI's default content-derived inset.
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                .hideFirstRowSeparator(index == 0)
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
-        .listSectionSeparator(.hidden, edges: .top)
+        .listSectionSeparator(.hidden)
         .tabTitleMenu("Podcasts")
         .libraryActionsToolbar()
         .navigationDestination(for: String.self)
@@ -80,14 +81,15 @@ struct PodcastDetailView: View
     {
         List
         {
-            ForEach(episodes)
-            { track in
+            ForEach(Array(episodes.enumerated()), id: \.element.id)
+            { (index, track) in
                 TrackRowButton(track: track, visibleTracks: episodes)
+                    .hideFirstRowSeparator(index == 0)
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
-        .listSectionSeparator(.hidden, edges: .top)
+        .listSectionSeparator(.hidden)
         .navigationTitle(show)
         .navigationBarTitleDisplayMode(.inline)
     }

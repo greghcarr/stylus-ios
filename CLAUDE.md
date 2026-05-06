@@ -24,19 +24,25 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
 - Phase 3c (MPNowPlayingInfoCenter + remote commands + lock-screen art):
   done. Lock screen, Control Center, and AirPods controls drive playback;
   artwork shows on the lock screen.
-- Phase 4 (tab navigation: All Songs / Artists / Albums / Podcasts /
-  Search, drill-down): done. RootView owns a `TabView` (hidden tab
-  bar via `.toolbar(.hidden, for: .tabBar)` on each NavigationStack),
-  a `TabRouter` ObservableObject that holds the active `AppTab`, and
-  the NowPlayingSheet presentation. Tab switching is via a custom
-  title chevron in each tab's principal toolbar slot -- a UIKit
-  `UIButton` with `UIDeferredMenuElement` so the menu is set ONCE in
-  `makeUIView` and survives the parent's frequent re-renders during
-  the library scan (a SwiftUI `Menu` in the same slot flickered).
-  Each tab also gets a shared `.libraryActionsToolbar()` modifier
-  for the trailing ellipsis menu (Change music folder / Change
-  podcasts folder / Re-scan folders), again UIKit-backed for the
-  same reason.
+- Phase 4 (tab navigation: All Songs / Artists / Albums / Genres /
+  Podcasts / Search, drill-down): done. RootView wraps everything
+  in a single `NavigationStack(path:)` with `HomeView` at the root
+  (the "My Library" entry list). Each non-Home tab is a value-based
+  `.navigationDestination(for: AppTab.self)` push from HomeView,
+  so the user gets iOS's native slide-from-the-right animation.
+  `TabRouter` is an ObservableObject that owns the active `AppTab`
+  AND the root `NavigationPath`; the path is mutated from
+  HomeView's row taps (which are Buttons that call
+  `router.path.append(tab)` rather than NavigationLinks -- iOS 18's
+  NavigationLink in a List interacts poorly with simultaneous
+  gestures attached to the row, so we sidestep the issue with
+  programmatic pushes). Each tab gets a shared
+  `.libraryActionsToolbar()` modifier for the trailing ellipsis
+  menu (Change music folder / Change podcasts folder / Re-scan
+  folders), UIKit-backed via `UIDeferredMenuElement` so the menu
+  is set ONCE in `makeUIView` and survives the parent's frequent
+  re-renders during the library scan (a SwiftUI `Menu` in the
+  same slot flickered).
 - Phase 5 (background BPM / key analysis): done. The bridged
   `AnalysisEngine` writes the `.styl` sidecar on each track and the
   in-memory library updates as tracks finish so BPM / key appear
@@ -84,6 +90,43 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
   `scenePhase = .active` if a track is current, so dynamic-island /
   lock-screen taps land users in the full sheet. Splash screen +
   launch storyboard for a no-flash launch.
+- Phase 6e (Genres tab + iTunes-style artist drilldown): done.
+  New Genres tab on My Library, listing distinct non-empty genres
+  with track counts; tapping a genre drills into its track list.
+  ArtistDetailView now branches on the artist's distinct-album
+  count: 0 or 1 album skips straight to the track list (no
+  busywork album picker), 2+ albums shows "All Albums" first
+  followed by each album in alphabetical order, mirroring iTunes'
+  classic library navigation. Tapping a specific album pushes
+  AlbumDetailView via AlbumKey; tapping All Albums pushes a leaf
+  ArtistAllSongsView via the dedicated ArtistAllSongsKey type.
+- Phase 6f (audio click fixes): done. Two distinct clicks were
+  audible at different track-switch moments. (1) AudioPlayer
+  used to call `engine.stop()` between tracks, which made the
+  speaker hardware briefly disengage and re-engage on every
+  switch (the "click between songs"); now `stopInternal` keeps
+  the engine running across the boundary, only tearing it down
+  on a full `stop()`. The format reconnect is also skipped when
+  the new track has the same sample rate + channel count as the
+  previous one (most libraries are mostly 44.1 kHz stereo).
+  (2) Manual user switches cut audio mid-amplitude, leaving a
+  step discontinuity that clicked; AudioPlayer now ramps the
+  player node's volume from current → 0 in 8 sub-steps over
+  20 ms before tearing down the schedule on user-initiated
+  switches. Auto-advance bypasses the fade since the previous
+  track is already at silent end.
+- Phase 6g (row tap feedback + context menu polish): done.
+  RowTapButtonStyle drives subtle scale + opacity dim + light
+  haptic on press for every tappable row across the app
+  (HomeView, TrackRowButton). Replaced an earlier
+  simultaneousGesture-based modifier that intercepted List's
+  scroll recognizer and cancelled NavigationLink taps. Track
+  row long-press contextMenu uses `.contentShape(.contextMenuPreview,
+  RoundedRectangle(...))` to lock the preview's clipping shape
+  so the dismissal animation no longer morphs from rounded to
+  square; a custom `preview:` view with explicit padding +
+  `frame(maxWidth: 360)` gives consistent breathing room across
+  rows in portrait while shrinking gracefully in landscape.
 - Phase 7+ (playlists, polish):
   pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
 
@@ -135,6 +178,19 @@ stylus-ios/
                               Calls onPlaybackStateChanged after every play /
                               pause / resume / stop / seek so external
                               listeners (NowPlayingController) can refresh.
+                              Keeps the engine RUNNING across track
+                              switches (the per-track engine.start /
+                              engine.stop cycle made the speaker hardware
+                              click); only tearing it down on a full stop().
+                              User-initiated switches (next / prev / tap
+                              another track) pre-fade the player node's
+                              volume to 0 over 20 ms in 8 sub-steps to
+                              avoid the mid-amplitude cutoff click; the
+                              fadeTask is cancelled on a rapid
+                              double-tap so the latest press wins. Skips
+                              the engine.connect format reconnect when
+                              the new track has the same sample rate +
+                              channel count as the previous one.
         PlayQueue.swift       Ordered list + currentIndex; advance / goBack /
                               jump / setQueue. Swift-side, not bridged.
         NowPlayingController.swift Bridges AudioPlayer state to
@@ -226,9 +282,33 @@ stylus-ios/
                               the trailing menu's "Change music folder…"
                               has its own picker via the shared
                               .libraryActionsToolbar() modifier.
-        ArtistsView.swift     Artists tab + ArtistDetailView.
+        HomeView.swift        My Library entry list. Each row is a
+                              Button (NOT a NavigationLink) that
+                              programmatically appends an AppTab to
+                              the root NavigationPath via the shared
+                              TabRouter -- avoids an iOS 18
+                              NavigationLink-vs-simultaneousGesture
+                              interaction that swallowed taps when
+                              gesture-based row feedback was attached.
+        ArtistsView.swift     Artists tab + ArtistDetailView +
+                              ArtistAllSongsView. ArtistDetailView
+                              branches on the artist's distinct-album
+                              count: 0 or 1 album drops straight to
+                              the track list, 2+ shows "All Albums" +
+                              alphabetised album rows (iTunes-style).
+                              ArtistAllSongsKey is a typed wrapper
+                              that distinguishes "all songs by artist"
+                              from individual AlbumKey pushes.
         AlbumsView.swift      Albums tab + AlbumDetailView, with a
                               representative-track artwork thumbnail.
+                              AlbumKey identifies an album by
+                              (artist, album); ArtistDetailView pushes
+                              AlbumKey too and registers its own
+                              navigationDestination locally.
+        GenresView.swift      Genres tab + GenreDetailView. Lists
+                              distinct non-empty genre names with
+                              track counts; GenreKey wraps the genre
+                              name as a typed nav value.
         PodcastsView.swift    Podcasts tab + PodcastDetailView, grouped
                               by track.podcast.
         SearchView.swift      Search tab; .searchable filters tracks by
@@ -241,11 +321,58 @@ stylus-ios/
                               to the visible-track slice and starts
                               playback at the tapped row. Long-press
                               .contextMenu surfaces Play Next /
-                              Add to Queue / Look up / Edit Info.... Owns
-                              the .sheet that hosts EditInfoView.
+                              Add to Queue / Look up / Edit Info....
+                              Uses .contentShape(.contextMenuPreview,
+                              RoundedRectangle(...)) to lock the
+                              preview's clipping shape (so dismissal
+                              doesn't morph rounded -> square) plus
+                              a custom preview: view at frame(maxWidth:
+                              360) for consistent breathing room
+                              across rows in portrait and graceful
+                              shrink in landscape. Owns the .sheet
+                              that hosts EditInfoView.
                               .alignmentGuide(.listRowSeparatorLeading)
                               pins the row separator to the cell's
                               leading edge (matches album-art left).
+        RowTapFeedback.swift  RowTapButtonStyle: ButtonStyle with the
+                              row press visuals (scale 0.97 + opacity
+                              0.65) and a light haptic on press-down.
+                              Animation is asymmetric -- ease into
+                              pressed, instant snap back on release --
+                              so when the contextMenu is up and the
+                              system later flips isPressed to false,
+                              the row doesn't visibly rebound.
+        HapticFeedback.swift  Shared UIImpactFeedbackGenerator wrapper.
+                              Single long-lived instance for tapTick(),
+                              avoiding per-tap allocation. We
+                              deliberately do NOT call .prepare() at
+                              app launch: the haptic engine
+                              auto-deactivates after ~3 s and logs
+                              "Player was not running" / "core haptics
+                              engine finished with error" on
+                              deactivation, which spammed the console.
+                              First-call latency without prepare is
+                              barely perceptible.
+        ListFirstRowSeparator.swift
+                              .hideFirstRowSeparator(_:) helper that
+                              hides the top edge of the first row in
+                              a List. Apply inside an enumerated
+                              ForEach with index == 0; suppresses the
+                              top divider plain List would otherwise
+                              draw. .listSectionSeparator(.hidden)
+                              alone doesn't reliably handle this on
+                              iOS 26.
+        TransportBarBottomSpacer.swift
+                              Trailing footer row for any List of
+                              songs. Reserves transport-bar clearance
+                              when a track is playing AND
+                              unconditionally suppresses the divider
+                              under the actual last song row via
+                              .listRowSeparator(.hidden). Renders at
+                              0 height + 0 insets when no track is
+                              current so it takes no visible space
+                              but still suppresses the trailing
+                              divider.
         EditInfoView.swift    Per-track metadata editor (Form). "Look up
                               on iTunes" kicks LookupController.enqueue
                               with the currently-edited fields; .onChange

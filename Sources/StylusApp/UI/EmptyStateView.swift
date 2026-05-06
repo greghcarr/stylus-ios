@@ -5,6 +5,16 @@ import SwiftUI
 // horizontal centre of the screen instead of the centre of any inset
 // section that contains it (List overlays especially can pin against the
 // section's leading edge instead of the screen's).
+//
+// .ignoresSafeArea() on the outer frame is what pins this to the
+// SCREEN'S vertical centre rather than the inset content area's
+// centre. Without it, the frame is squeezed between the nav bar
+// above and the TransportBar (added as a safeAreaInset) below; their
+// asymmetry shifts the available-area centre slightly below the
+// screen's geometric centre, which reads as "the empty-state is too
+// low" to the user. Extending into the safe areas gives us the full
+// screen height to centre against; the chrome still draws on top so
+// nothing is clipped or hidden.
 struct EmptyStateView: View
 {
     let title:       String
@@ -43,5 +53,6 @@ struct EmptyStateView: View
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
 }

@@ -19,8 +19,8 @@ struct AlbumsView: View
     {
         List
         {
-            ForEach(albums)
-            { key in
+            ForEach(Array(albums.enumerated()), id: \.element.id)
+            { (index, key) in
                 NavigationLink(value: key)
                 {
                     AlbumRow(key: key,
@@ -31,11 +31,12 @@ struct AlbumsView: View
                 // up with the album-thumb's left side instead of
                 // SwiftUI's default content-derived inset.
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                .hideFirstRowSeparator(index == 0)
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
-        .listSectionSeparator(.hidden, edges: .top)
+        .listSectionSeparator(.hidden)
         .tabTitleMenu("Albums")
         .libraryActionsToolbar()
         .navigationDestination(for: AlbumKey.self)
@@ -48,7 +49,7 @@ struct AlbumsView: View
             {
                 EmptyStateView(title: "No albums",
                                systemImage: "square.stack",
-                               message: "Albums will appear here once your library has tracks tagged with album metadata.")
+                               message: "Tracks will appear here once your library has albums tagged.")
             }
         }
     }
@@ -146,14 +147,15 @@ struct AlbumDetailView: View
     {
         List
         {
-            ForEach(tracks)
-            { track in
+            ForEach(Array(tracks.enumerated()), id: \.element.id)
+            { (index, track) in
                 TrackRowButton(track: track, visibleTracks: tracks)
+                    .hideFirstRowSeparator(index == 0)
             }
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
-        .listSectionSeparator(.hidden, edges: .top)
+        .listSectionSeparator(.hidden)
         .navigationTitle(key.album)
         .navigationBarTitleDisplayMode(.inline)
     }

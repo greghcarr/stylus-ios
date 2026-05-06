@@ -42,6 +42,24 @@ final class AudioPlayer: ObservableObject
     // schedule's completion then triggers another playNext, and so on).
     private var scheduleGen: UInt64 = 0
     private var timer:       Timer?
+    // Cached format of the node -> mainMixer connection. Used by
+    // play(_:) to skip engine.connect when the next track has the
+    // same sample rate + channel count as the previous one. Most
+    // libraries are mostly 44.1 kHz stereo, so this elides the
+    // reconnect on the typical track switch.
+    private var lastConnectedFormat: AVAudioFormat?
+    // In-flight volume ramp for the user-initiated track switch
+    // fade-out (see performFadeOut). Cancelled when a new switch
+    // arrives mid-fade so the latest press takes precedence.
+    private var fadeTask: Task<Void, Never>?
+
+    // Length of the volume ramp applied before tearing down the
+    // current track on a user-initiated switch. 20 ms is short
+    // enough to feel instantaneous but long enough to clear a
+    // mid-amplitude sample down to silence in ~8 sub-step
+    // increments without each sub-step itself being audible.
+    private static let switchFadeDuration: TimeInterval = 0.020
+    private static let switchFadeSteps:    Int          = 8
 
     // External listener (NowPlayingController) hooks this to refresh
     // MPNowPlayingInfoCenter on every meaningful state change. The system
@@ -72,9 +90,61 @@ final class AudioPlayer: ObservableObject
 
     // MARK: - Playback control
 
-    func play(_ track: Track)
+    // fadeOutPrevious: true on user-initiated switches (next / prev /
+    // tap-to-play another track), false on auto-advance from a
+    // natural track end (the previous track is already at silent
+    // end, no fade needed and we'd just delay the next track's
+    // start). Defaults to true so external callers get the safer
+    // behaviour without thinking about it.
+    func play(_ track: Track, fadeOutPrevious: Bool = true)
     {
-        stopInternal()
+        // Cancel any in-flight fade so a rapid double-tap on next
+        // doesn't stack two fades on top of each other. The new
+        // press takes precedence; whatever volume the previous fade
+        // had already reached is the starting volume for this one
+        // (or for playImmediate's reset).
+        fadeTask?.cancel()
+        fadeTask = nil
+
+        let needsFade = fadeOutPrevious
+                     && isPlaying
+                     && currentTrack != nil
+                     && currentTrack?.filePath != track.filePath
+
+        guard needsFade else
+        {
+            playImmediate(track)
+            return
+        }
+
+        fadeTask = Task
+        { @MainActor [weak self] in
+            guard let self = self else { return }
+            await self.performSwitchFade()
+            if Task.isCancelled { return }
+            self.fadeTask = nil
+            self.playImmediate(track)
+        }
+    }
+
+    private func playImmediate(_ track: Track)
+    {
+        // Reset the node's volume in case a previous fade left it
+        // lowered (cancelled mid-ramp, or this immediate path is
+        // following a completed fade). Without this, a track that
+        // started right after a cancelled fade would play quietly
+        // until the next user switch.
+        node.volume = 1.0
+
+        // Tear down the schedule but leave the engine RUNNING across
+        // the track boundary. Stopping and restarting the engine for
+        // every track switch causes the audio output device on the
+        // speaker hardware to briefly disengage and re-engage -- the
+        // "click between songs" the user heard. Keeping the engine
+        // alive across track changes removes that click; the brief
+        // silence between tracks comes from the node having no
+        // scheduled buffer, not from the output device dropping out.
+        stopInternal(tearDownEngine: false)
 
         let url = URL(fileURLWithPath: track.filePath)
         do
@@ -87,7 +157,19 @@ final class AudioPlayer: ObservableObject
             duration    = sampleRate > 0 ? Double(totalFrames) / sampleRate : 0
             currentTime = 0
 
-            engine.connect(node, to: engine.mainMixerNode, format: f.processingFormat)
+            // Skip the connect when the new track has the same format
+            // as the last one. AVAudioEngine.connect during playback
+            // can produce a small click of its own as the mixer
+            // re-establishes the connection; this elision keeps the
+            // typical 44.1 kHz-stereo -> 44.1 kHz-stereo transition
+            // glitch-free.
+            if needsReconnect(for: f.processingFormat)
+            {
+                engine.connect(node,
+                               to:     engine.mainMixerNode,
+                               format: f.processingFormat)
+                lastConnectedFormat = f.processingFormat
+            }
 
             scheduleAndPlay(startFrame: 0)
 
@@ -101,6 +183,28 @@ final class AudioPlayer: ObservableObject
             print("AudioPlayer: failed to load \(track.filePath): \(error)")
             currentTrack = nil
             onPlaybackStateChanged?()
+        }
+    }
+
+    // Linear volume ramp from the node's current level down to 0
+    // over `switchFadeDuration` in `switchFadeSteps` sub-steps.
+    // Stepped (rather than continuous) because AVAudioPlayerNode
+    // doesn't expose a built-in ramp; 8 steps over 20 ms keeps each
+    // sub-step's amplitude jump well below the click threshold.
+    private func performSwitchFade() async
+    {
+        let stepNanos = UInt64((Self.switchFadeDuration
+                                / Double(Self.switchFadeSteps))
+                               * 1_000_000_000)
+        let startVolume = node.volume
+
+        for i in 1...Self.switchFadeSteps
+        {
+            try? await Task.sleep(nanoseconds: stepNanos)
+            if Task.isCancelled { return }
+            let remaining = Float(Self.switchFadeSteps - i)
+                          / Float(Self.switchFadeSteps)
+            node.volume = startVolume * remaining
         }
     }
 
@@ -138,14 +242,31 @@ final class AudioPlayer: ObservableObject
         onPlaybackStateChanged?()
     }
 
-    private func stopInternal()
+    // tearDownEngine: pass false on track-to-track transitions to leave
+    // the engine running across the boundary (avoids the speaker-
+    // hardware click). Pass true (the default) when fully ending
+    // playback so the audio session can release its hold on the
+    // output route.
+    private func stopInternal(tearDownEngine: Bool = true)
     {
         scheduleGen &+= 1     // invalidate any pending .dataPlayedBack callback
         node.stop()
-        if engine.isRunning { engine.stop() }
+        if tearDownEngine && engine.isRunning { engine.stop() }
         isPlaying = false
         file      = nil
         stopTimer()
+    }
+
+    // True iff the new track's format differs from whatever the
+    // node -> mainMixer connection is currently configured for.
+    // Compares sample rate + channel count rather than relying on
+    // AVAudioFormat equality, which is over-strict (would trip on
+    // bit-depth differences that the mixer handles transparently).
+    private func needsReconnect(for newFormat: AVAudioFormat) -> Bool
+    {
+        guard let last = lastConnectedFormat else { return true }
+        return last.sampleRate   != newFormat.sampleRate
+            || last.channelCount != newFormat.channelCount
     }
 
     func seek(to seconds: TimeInterval)
@@ -225,7 +346,17 @@ final class AudioPlayer: ObservableObject
         // seek calls cancel the buffer and would otherwise spuriously fire
         // .dataPlayedBack with seekFrame ahead of where we paused.
         guard isPlaying else { return }
-        playNext()
+        // Auto-advance: skip the user-switch fade-out (the track has
+        // already played to its silent end, fading would just delay
+        // the next track's start without any audible benefit).
+        if let next = queue?.advance()
+        {
+            play(next, fadeOutPrevious: false)
+        }
+        else
+        {
+            stop()
+        }
     }
 
     // MARK: - currentTime ticker

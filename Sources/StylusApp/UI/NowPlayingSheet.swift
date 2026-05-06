@@ -125,11 +125,11 @@ struct NowPlayingSheet: View
         // shared sheetY translation. Adding one here would stack on
         // top of the parent's offset and double the drag distance.
         .onChange(of: audio.currentTime)
-        { newTime in
+        { _, newTime in
             if !userIsScrubbing { sliderValue = newTime }
         }
         .onChange(of: audio.currentTrack?.filePath)
-        { _ in
+        {
             sliderValue = audio.currentTime
         }
     }
