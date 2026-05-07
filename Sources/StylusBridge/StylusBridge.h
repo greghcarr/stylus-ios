@@ -96,6 +96,23 @@ int32_t Stylus_StylLoad(const char* trackPath, StylusTrackC* outTrack);
 // want to overwrite. Returns 1 on success.
 int32_t Stylus_StylSave(const StylusTrackC* track);
 
+// Patches the on-disk library cache for the given track in place. Reads
+// the cache file, finds the entry whose file path matches `track`,
+// overwrites the editable fields (title, artist, album, genre, year,
+// trackNumber, durationSecs, bpm, key) on that entry, and writes the
+// cache back. Cache-only fields the iOS Track type doesn't carry
+// (lufs, hidden, playCount) are left untouched.
+//
+// Needed because the iOS launch path skips the slow metadata-reading
+// scan when the on-disk file count matches the cache's track count;
+// without this in-place patch, .styl edits never make it into the
+// in-memory library on subsequent launches.
+//
+// Returns 1 on success, 0 if the cache is missing / unparseable / the
+// track isn't in it.
+int32_t Stylus_LibraryUpdateCachedTrack(StylusLibraryHandle handle,
+                                        const StylusTrackC* track);
+
 // --- Background BPM / key analysis ---
 
 typedef struct StylusAnalysis StylusAnalysis;

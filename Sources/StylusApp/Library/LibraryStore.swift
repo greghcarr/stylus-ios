@@ -177,12 +177,82 @@ final class LibraryStore: ObservableObject
     // in-memory entry. The bridge's Stylus_StylSave re-loads existing
     // sidecar data first so disk-side fields the user didn't edit
     // (playCount, dateAdded, lufs, etc.) survive.
+    //
+    // The third step -- patching the on-disk library cache file --
+    // matters because the iOS launch path uses a skip-scan
+    // optimisation: if the cached track count matches the current
+    // file count, the full metadata-reading scan is skipped, so a
+    // freshly-edited .styl never makes it into the in-memory
+    // library on subsequent launches. Updating the cache entry
+    // in-place keeps both the instant-launch benefit and the
+    // edited values.
     @discardableResult
     func save(_ track: Track) -> Bool
     {
         let ok = saveTrackToStyl(track)
-        if ok { updateTrack(track) }
+        if ok
+        {
+            updateTrack(track)
+            updateCachedTrack(track)
+        }
         return ok
+    }
+
+    // Patches the on-disk library cache entry for this track via the
+    // bridge so the next launch's LibraryLoadCache returns the
+    // edited values. Goes through Stylus_LibraryUpdateCachedTrack
+    // rather than reading / writing the JSON directly from Swift
+    // because the bridge owns the canonical cache path + format
+    // (the previous Swift JSON-patcher silently no-op'd against the
+    // wrong path or schema and edits never persisted).
+    private func updateCachedTrack(_ track: Track)
+    {
+        guard let h = handle else { return }
+
+        track.filePath.withCString
+        { p in
+            track.title.withCString
+            { ti in
+                track.artist.withCString
+                { a in
+                    track.album.withCString
+                    { al in
+                        track.genre.withCString
+                        { g in
+                            track.year.withCString
+                            { y in
+                                track.key.withCString
+                                { k in
+                                    track.podcast.withCString
+                                    { pc in
+                                        var c = StylusTrackC()
+                                        c.filePath        = p
+                                        c.title           = ti
+                                        c.artist          = a
+                                        c.album           = al
+                                        c.genre           = g
+                                        c.year            = y
+                                        c.musicalKey      = k
+                                        c.podcast         = pc
+                                        c.trackNumber     = Int32(track.trackNumber)
+                                        c.durationSeconds = track.durationSeconds
+                                        c.bpm             = track.bpm
+                                        c.lufs            = 0
+                                        c.isPodcast       = track.isPodcast ? 1 : 0
+                                        c.dateAddedMillis = 0
+                                        c.playCount       = 0
+                                        withUnsafePointer(to: &c)
+                                        { ptr in
+                                            _ = Stylus_LibraryUpdateCachedTrack(h, ptr)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private static func countAudioFiles(at root: URL) -> Int

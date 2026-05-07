@@ -193,6 +193,24 @@ A pre-build script phase inside the Xcode project drives CMake to build
 `libStylusCore.a` automatically; the script lives inline in [project.yml](project.yml).
 You don't need to invoke CMake manually.
 
+### Disk usage (watch `~/Library/Developer/Xcode/DeviceLogs`)
+Every device debug-connect session pulls crash dumps + console logs into
+`~/Library/Developer/Xcode/DeviceLogs/`. On a heavy debugging day this can
+balloon past 10 GB on its own and was the dominant cause of a near-out-of-
+disk incident in 2026-05. The directory is purely a transient cache --
+deleting its contents is safe and Xcode rebuilds it on demand. Periodic
+audit + cleanup:
+
+```bash
+du -sh ~/Library/Developer/Xcode/DeviceLogs    # eyeball the size
+rm -rf ~/Library/Developer/Xcode/DeviceLogs/*  # wipe; Xcode will repopulate
+```
+
+Other dev caches that grow silently and are safe to clear when disk is tight:
+`~/Library/Developer/Xcode/iOS DeviceSupport`, `DerivedData`, and the
+project's own `build/`, `build-ios-sim/`, `build-ios-device/` (regenerated
+by `make build` / `make build-sim`).
+
 ## File layout
 ```
 stylus-ios/

@@ -39,7 +39,14 @@ struct EditInfoView: View
                 {
                     TextField("Genre", text: $genre)
                     TextField("Year",  text: $year).keyboardType(.numberPad)
-                    Stepper("Track #: \(trackNumber)", value: $trackNumber, in: 0 ... 999)
+                    // Display-only: 0 in the data model means "no
+                    // track number set", so show "None" rather than
+                    // a literal zero. The underlying value is still
+                    // 0 -- saving leaves it as 0 too -- only the
+                    // label is conditional.
+                    Stepper("Track #: \(trackNumber == 0 ? "None" : "\(trackNumber)")",
+                            value: $trackNumber,
+                            in:    0 ... 999)
                 }
 
                 Section

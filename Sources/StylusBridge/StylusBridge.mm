@@ -161,6 +161,29 @@ juce::String migratePathIfNeeded (const juce::String& trackPath,
     return trackPath;
 }
 
+// Builds a partially-populated TrackInfo from the iTunes-lookup
+// callbacks' UTF-8 args. Defined here in the file-local namespace
+// (rather than inside the extern "C" block below) so it isn't given
+// C linkage -- a C-linkage function returning a C++ type is what
+// triggered the -Wreturn-type-c-linkage warning when this helper
+// previously lived next to the Lookup wrappers.
+Stylus::TrackInfo makeLookupTrack (const char* path,
+                                   const char* artist,
+                                   const char* album,
+                                   const char* title)
+{
+    Stylus::TrackInfo info;
+    if (path != nullptr)
+        info.file   = juce::File (juce::String (juce::CharPointer_UTF8 (path)));
+    if (artist != nullptr)
+        info.artist = juce::String (juce::CharPointer_UTF8 (artist));
+    if (album != nullptr)
+        info.album  = juce::String (juce::CharPointer_UTF8 (album));
+    if (title != nullptr)
+        info.title  = juce::String (juce::CharPointer_UTF8 (title));
+    return info;
+}
+
 } // namespace
 
 extern "C" {
@@ -327,6 +350,107 @@ int32_t Stylus_StylSave (const StylusTrackC* track)
     return Stylus::StylFile::save (info) ? 1 : 0;
 }
 
+int32_t Stylus_LibraryUpdateCachedTrack (StylusLibraryHandle handle,
+                                         const StylusTrackC* track)
+{
+    if (handle == nullptr || track == nullptr || track->filePath == nullptr)
+    {
+        juce::Logger::writeToLog ("Stylus_LibraryUpdateCachedTrack: null arg");
+        return 0;
+    }
+
+    std::vector<Stylus::TrackInfo> tracks;
+    std::vector<juce::File>        cachedMusicFolders;
+    std::vector<juce::File>        cachedPodcastFolders;
+    if (! Stylus::LibraryCache::tryLoad (tracks, cachedMusicFolders, cachedPodcastFolders))
+    {
+        juce::Logger::writeToLog ("Stylus_LibraryUpdateCachedTrack: cache miss / unparseable -- skipping");
+        return 0;
+    }
+
+    const juce::String targetPath (juce::CharPointer_UTF8 (track->filePath));
+    // The cache file may have been written under an older app-data
+    // container UUID (Xcode reinstalls assign a fresh UUID while the
+    // contents migrate forward), and iOS also aliases /var <->
+    // /private/var. Two-pass match: cheap literal compare first,
+    // then canonical (realpath-resolved) compare, then a migrated
+    // compare that mirrors what Stylus_LibraryLoadCache does so the
+    // path Swift sends (in current-UUID form) finds an entry that
+    // was stored under the old UUID.
+    const juce::String targetCanonical = canonicalPath (juce::File (targetPath));
+
+    auto migrateCachedPath = [&] (const juce::String& cachedPath)
+    {
+        auto p = cachedPath;
+        p = migratePathIfNeeded (p, cachedMusicFolders,   handle->folders);
+        p = migratePathIfNeeded (p, cachedPodcastFolders, handle->podcastFolders);
+        return p;
+    };
+
+    auto it = std::find_if (tracks.begin(), tracks.end(),
+                            [&] (const Stylus::TrackInfo& t)
+                            {
+                                const auto raw = t.file.getFullPathName();
+                                if (raw == targetPath)                              return true;
+                                if (canonicalPath (t.file) == targetCanonical)      return true;
+                                if (migrateCachedPath (raw) == targetPath)          return true;
+                                return false;
+                            });
+
+    if (it == tracks.end())
+    {
+        juce::Logger::writeToLog (juce::String ("Stylus_LibraryUpdateCachedTrack: track not in cache: ")
+                                  + targetPath
+                                  + " (canonical=" + targetCanonical + ")");
+        return 0;
+    }
+
+    auto setIfNonNull = [] (juce::String& dst, const char* src)
+    {
+        if (src != nullptr) dst = juce::String (juce::CharPointer_UTF8 (src));
+    };
+
+    // Overwrite only the editable fields. lufs / hidden / playCount /
+    // dateAdded stay untouched so on-disk-only state we don't surface
+    // through the iOS Track type isn't lost.
+    setIfNonNull (it->title,       track->title);
+    setIfNonNull (it->artist,      track->artist);
+    setIfNonNull (it->album,       track->album);
+    setIfNonNull (it->genre,       track->genre);
+    setIfNonNull (it->year,        track->year);
+    it->trackNumber  = track->trackNumber;
+    it->durationSecs = track->durationSeconds;
+    it->bpm          = track->bpm;
+    setIfNonNull (it->musicalKey,  track->musicalKey);
+    setIfNonNull (it->podcast,     track->podcast);
+
+    // Migrate every cached track's path forward to the current
+    // folder roots and write the cache back under the current
+    // folders too. After this rewrite the cache is "self-healed":
+    // subsequent edits hit the fast literal-compare path and
+    // future LibraryLoadCache calls don't need to migrate at all.
+    int32_t migratedCount = 0;
+    for (auto& t : tracks)
+    {
+        const auto raw = t.file.getFullPathName();
+        const auto migrated = migrateCachedPath (raw);
+        if (migrated != raw)
+        {
+            t.file = juce::File (migrated);
+            ++migratedCount;
+        }
+    }
+
+    const bool ok = Stylus::LibraryCache::save (tracks,
+                                                handle->folders,
+                                                handle->podcastFolders);
+    juce::Logger::writeToLog (juce::String ("Stylus_LibraryUpdateCachedTrack: ")
+                              + (ok ? "saved" : "FAILED")
+                              + ", migrated=" + juce::String (migratedCount)
+                              + ", path=" + targetPath);
+    return ok ? 1 : 0;
+}
+
 int32_t Stylus_StylLoad (const char* trackPath, StylusTrackC* outTrack)
 {
     if (trackPath == nullptr || outTrack == nullptr) return 0;
@@ -466,26 +590,6 @@ void Stylus_LookupDestroy (StylusLookupHandle handle)
 {
     if (handle == nullptr) return;
     delete handle;
-}
-
-namespace
-{
-    Stylus::TrackInfo makeLookupTrack (const char* path,
-                                       const char* artist,
-                                       const char* album,
-                                       const char* title)
-    {
-        Stylus::TrackInfo info;
-        if (path != nullptr)
-            info.file   = juce::File (juce::String (juce::CharPointer_UTF8 (path)));
-        if (artist != nullptr)
-            info.artist = juce::String (juce::CharPointer_UTF8 (artist));
-        if (album != nullptr)
-            info.album  = juce::String (juce::CharPointer_UTF8 (album));
-        if (title != nullptr)
-            info.title  = juce::String (juce::CharPointer_UTF8 (title));
-        return info;
-    }
 }
 
 void Stylus_LookupQueue (StylusLookupHandle handle,
