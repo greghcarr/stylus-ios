@@ -19,8 +19,60 @@ struct AlbumsView: View
     {
         List
         {
-            ForEach(Array(albums.enumerated()), id: \.element.id)
-            { (index, key) in
+            // "All Albums" -- mirrors iTunes' top-of-list catch-all.
+            // Drops the user into a flat every-track view sorted by
+            // artist -> album -> track # -> title. Hidden when the
+            // library has no music tracks at all (the empty-state
+            // overlay takes over).
+            if !allMusicTracks.isEmpty
+            {
+                NavigationLink(value: AllSongsKey())
+                {
+                    HStack(spacing: 12)
+                    {
+                        Image(systemName: "square.stack.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, height: 44)
+                        Text("All Albums")
+                        Spacer()
+                        Text("\(allMusicTracks.count)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                .hideFirstRowSeparator(true)
+                .tracksContextMenu(suggestedName: { "All Albums" })
+                                  { allMusicTracks }
+            }
+
+            // "(no album)" -- italics flags this as a special
+            // category. Hidden when every track has an album tag.
+            if !noAlbumTracks.isEmpty
+            {
+                NavigationLink(value: NoAlbumKey())
+                {
+                    HStack(spacing: 12)
+                    {
+                        Image(systemName: "square.dashed")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, height: 44)
+                        Text("(no album)").italic()
+                        Spacer()
+                        Text("\(noAlbumTracks.count)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                .tracksContextMenu(suggestedName: { "" })
+                                  { noAlbumTracks }
+            }
+
+            ForEach(albums, id: \.id)
+            { key in
                 NavigationLink(value: key)
                 {
                     AlbumRow(key: key,
@@ -31,7 +83,6 @@ struct AlbumsView: View
                 // up with the album-thumb's left side instead of
                 // SwiftUI's default content-derived inset.
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .hideFirstRowSeparator(index == 0)
                 .tracksContextMenu(suggestedName: { key.album })
                                   { tracks(forAlbum: key) }
             }
@@ -44,15 +95,33 @@ struct AlbumsView: View
         { key in
             AlbumDetailView(key: key)
         }
+        .navigationDestination(for: AllSongsKey.self)
+        { _ in
+            AllSongsView()
+        }
+        .navigationDestination(for: NoAlbumKey.self)
+        { _ in
+            NoAlbumGlobalView()
+        }
         .overlay
         {
-            if albums.isEmpty
+            if albums.isEmpty && noAlbumTracks.isEmpty
             {
                 EmptyStateView(title: "No albums",
                                systemImage: "square.stack",
                                message: "Tracks will appear here once your library has albums tagged.")
             }
         }
+    }
+
+    private var allMusicTracks: [Track]
+    {
+        library.tracks.filter { !$0.isPodcast }
+    }
+
+    private var noAlbumTracks: [Track]
+    {
+        library.tracks.filter { !$0.isPodcast && $0.album.isEmpty }
     }
 
     private var albums: [AlbumKey]
@@ -176,7 +245,7 @@ struct AlbumDetailView: View
         }
         .listStyle(.plain)
         .listSectionSeparator(.hidden)
-        .navigationTitle(key.album)
+        .navigationTitle(key.album.isEmpty ? "(no album)" : key.album)
         .navigationBarTitleDisplayMode(.inline)
     }
 

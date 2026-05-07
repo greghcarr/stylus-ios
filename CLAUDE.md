@@ -905,6 +905,15 @@ so regressions are easy to attribute via `git bisect`.
 - The CMake target generates the inner `StylusIOS.xcodeproj` but that's a
   build artifact. The user-facing project is `StylusApp.xcodeproj` which is
   XcodeGen-driven.
+- Every list-row view (NavigationLink, Button, or any other top-level
+  ForEach child) gets `.alignmentGuide(.listRowSeparatorLeading) { _ in 0 }`.
+  The user wants horizontal dividers to extend symmetrically -- the same
+  distance from the left edge as from the right -- and SwiftUI's default
+  pins the leading separator inset to wherever the row content begins,
+  which leaves a visible gap on the left when the row has a leading icon
+  or padding. The pin defeats that default. Apply the modifier on every
+  row even if the row currently has no leading icon, so future leading
+  icons don't accidentally shift the divider.
 
 ## Doc maintenance (mandatory)
 Update **this file and [README.md](README.md)** whenever a change touches:

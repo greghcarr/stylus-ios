@@ -20,8 +20,49 @@ struct GenresView: View
     {
         List
         {
-            ForEach(Array(genreRows.enumerated()), id: \.element.name)
-            { (index, row) in
+            // "All Genres" -- catch-all entry mirroring "All Artists"
+            // and "All Albums". Drops the user into a flat every-track
+            // view across the library.
+            if !allMusicTracks.isEmpty
+            {
+                NavigationLink(value: AllSongsKey())
+                {
+                    HStack
+                    {
+                        Text("All Genres")
+                        Spacer()
+                        Text("\(allMusicTracks.count)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                .hideFirstRowSeparator(true)
+                .tracksContextMenu(suggestedName: { "All Genres" })
+                                  { allMusicTracks }
+            }
+
+            // "(no genre)" -- italics flags this as a special category.
+            // Hidden when every track has a genre tag.
+            if !noGenreTracks.isEmpty
+            {
+                NavigationLink(value: NoGenreKey())
+                {
+                    HStack
+                    {
+                        Text("(no genre)").italic()
+                        Spacer()
+                        Text("\(noGenreTracks.count)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                .tracksContextMenu(suggestedName: { "" }) { noGenreTracks }
+            }
+
+            ForEach(genreRows, id: \.name)
+            { row in
                 NavigationLink(value: GenreKey(name: row.name))
                 {
                     HStack
@@ -33,7 +74,7 @@ struct GenresView: View
                             .foregroundStyle(.secondary)
                     }
                 }
-                .hideFirstRowSeparator(index == 0)
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .tracksContextMenu(suggestedName: { row.name })
                                   { tracks(forGenre: row.name) }
             }
@@ -46,15 +87,33 @@ struct GenresView: View
         { key in
             GenreDetailView(genre: key.name)
         }
+        .navigationDestination(for: AllSongsKey.self)
+        { _ in
+            AllSongsView()
+        }
+        .navigationDestination(for: NoGenreKey.self)
+        { _ in
+            NoGenreView()
+        }
         .overlay
         {
-            if genreRows.isEmpty
+            if genreRows.isEmpty && noGenreTracks.isEmpty
             {
                 EmptyStateView(title: "No genres",
                                systemImage: "tag",
                                message: "Tracks will appear here once your library has genres tagged.")
             }
         }
+    }
+
+    private var allMusicTracks: [Track]
+    {
+        library.tracks.filter { !$0.isPodcast }
+    }
+
+    private var noGenreTracks: [Track]
+    {
+        library.tracks.filter { !$0.isPodcast && $0.genre.isEmpty }
     }
 
     // Distinct genres present in the music library (podcasts excluded
@@ -132,6 +191,53 @@ struct GenreDetailView: View
     {
         library.tracks
             .filter { !$0.isPodcast && $0.genre == genre }
+            .sorted
+            { lhs, rhs in
+                if lhs.artist.localizedCaseInsensitiveCompare(rhs.artist) != .orderedSame
+                {
+                    return lhs.artist.localizedCaseInsensitiveCompare(rhs.artist) == .orderedAscending
+                }
+                if lhs.album.localizedCaseInsensitiveCompare(rhs.album) != .orderedSame
+                {
+                    return lhs.album.localizedCaseInsensitiveCompare(rhs.album) == .orderedAscending
+                }
+                if lhs.trackNumber != rhs.trackNumber
+                {
+                    return lhs.trackNumber < rhs.trackNumber
+                }
+                return lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
+            }
+    }
+}
+
+// "(no genre)" leaf -- every non-podcast track whose genre tag is
+// empty, sorted artist -> album -> track # -> title. Reached only
+// from the GenresView "(no genre)" sentinel.
+struct NoGenreView: View
+{
+    @EnvironmentObject var library: LibraryStore
+
+    var body: some View
+    {
+        List
+        {
+            ForEach(Array(tracks.enumerated()), id: \.element.id)
+            { (index, track) in
+                TrackRowButton(track: track, visibleTracks: tracks)
+                    .hideFirstRowSeparator(index == 0)
+            }
+            TransportBarBottomSpacer()
+        }
+        .listStyle(.plain)
+        .listSectionSeparator(.hidden)
+        .navigationTitle("(no genre)")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var tracks: [Track]
+    {
+        library.tracks
+            .filter { !$0.isPodcast && $0.genre.isEmpty }
             .sorted
             { lhs, rhs in
                 if lhs.artist.localizedCaseInsensitiveCompare(rhs.artist) != .orderedSame
