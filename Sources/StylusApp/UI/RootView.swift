@@ -38,6 +38,8 @@ struct RootView: View
     // under the finger, no constant delta.
     @State private var safeTop: CGFloat = 0
 
+    @Environment(\.scenePhase) private var scenePhase
+
     // Lift threshold (pt of upward drag) past which a release commits
     // to fully-expanded. Below it, the sheet snaps back to the bar.
     private static let liftThreshold: CGFloat = 100
@@ -106,6 +108,27 @@ struct RootView: View
         .onChange(of: audio.currentTrack?.filePath)
         { _, newPath in
             if newPath == nil { sheetY = screenH }
+        }
+        // Snap any in-flight sheet drag to the nearest endpoint when
+        // the app transitions out of .active. iOS's swipe-up-from-
+        // bottom gesture for the app switcher overlaps with our
+        // TransportBar lift-drag: the user can begin lifting the
+        // sheet, the system takes over for the home gesture, and our
+        // DragGesture's .onEnded never fires. sheetY would otherwise
+        // stay at whatever partial value the lift reached, leaving
+        // the sheet stuck partially visible at the bottom when the
+        // user returns to Stylus. Snapping to whichever endpoint
+        // sheetY is already closer to keeps the sheet committed
+        // (full-screen or hidden) the next time it's seen, and is a
+        // no-op if the user wasn't dragging (sheetY was already 0
+        // or screenH, so it stays where it was).
+        .onChange(of: scenePhase)
+        { _, newPhase in
+            if newPhase != .active && screenH > 0
+            {
+                let midpoint = screenH * 0.5
+                sheetY = sheetY < midpoint ? 0 : screenH
+            }
         }
         // Custom env key (NOT .environmentObject) so consumers don't
         // subscribe to the router's @Published current. See the
