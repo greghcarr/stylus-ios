@@ -45,18 +45,16 @@ struct TrackRowButton: View
         // Pin the row separator's leading edge to the cell's leading edge
         // instead of letting SwiftUI infer it from the album-art column.
         .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-        // Lock the contextMenu preview's clipping shape so iOS uses
-        // the SAME rounded rectangle for both the opening and the
-        // dismissing animations. Without this, the system creates
-        // a rounded preview when the menu opens, but on dismissal
-        // morphs that preview back into the row's natural square
-        // shape -- visible briefly as a "rounded becomes straight,
-        // slightly larger" frame just before the preview fades out.
-        // With the shape pinned, both animations operate on the
-        // same rounded rect; the dismissal just shrinks + fades it
-        // without changing corner radius.
-        .contentShape(.contextMenuPreview,
-                      RoundedRectangle(cornerRadius: 12, style: .continuous))
+        // Lock the contextMenu preview's clipping shape to the row's
+        // natural square shape. iOS renders this shape during the
+        // pre-lift anticipation phase, so making it a Rectangle (not
+        // a RoundedRectangle) means the anticipation looks like the
+        // row itself rather than a separate rounded inset rectangle
+        // appearing inside the row -- one fewer visible stage before
+        // the menu opens. Pinning the shape (rather than letting iOS
+        // pick its default rounded preview) also keeps the dismissal
+        // from morphing rounded -> square.
+        .contentShape(.contextMenuPreview, Rectangle())
         .contextMenu
         {
             Button

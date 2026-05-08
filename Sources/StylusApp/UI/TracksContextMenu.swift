@@ -48,9 +48,12 @@ extension View
 // a 360-pt max width so every row in the app long-presses to the
 // same shape and size, matching TrackRowButton's behaviour.
 //
-// .contentShape(.contextMenuPreview, RoundedRectangle) locks the
-// preview's clipping shape so iOS doesn't morph rounded -> square
-// on dismissal. Same fix TrackRowButton uses.
+// .contentShape(.contextMenuPreview, Rectangle()) pins the
+// preview's clip shape to the row's natural square shape. iOS
+// renders this shape during the pre-lift anticipation phase, so
+// keeping it a plain Rectangle means the anticipation looks like
+// the row itself rather than a separate rounded inset rectangle
+// appearing inside the row. Same fix TrackRowButton uses.
 private struct TracksContextMenu<Preview: View, Extra: View>: ViewModifier
 {
     let suggestedName:    () -> String
@@ -67,9 +70,7 @@ private struct TracksContextMenu<Preview: View, Extra: View>: ViewModifier
     func body(content: Content) -> some View
     {
         content
-            .contentShape(.contextMenuPreview,
-                          RoundedRectangle(cornerRadius: 12,
-                                           style:        .continuous))
+            .contentShape(.contextMenuPreview, Rectangle())
             .contextMenu
             {
                 Button
