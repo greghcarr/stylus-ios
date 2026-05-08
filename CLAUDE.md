@@ -1025,12 +1025,16 @@ Stylus` and reach internal types directly. Tests run hosted (TEST_HOST
 = the StylusApp bundle), which lets future tests touch the bridged
 C++ core without a separate link step.
 
-`make test` resolves a concrete iPhone simulator UUID via
-`xcrun simctl list devices available` at invocation time and passes
-it to `xcodebuild ... -destination 'platform=iOS Simulator,id=<uuid>'`.
-Using the UUID rather than the device name avoids fragility around
-simctl's leading-whitespace formatting and stays portable across
-machines with different installed sim runtimes.
+`make test` prefers a connected physical iPhone (resolved via
+`xcrun xctrace list devices`) and falls back to the first available
+iPhone simulator only if no phone is connected. Physical-device
+tests work because project.yml sets DEVELOPMENT_TEAM, so auto-signing
+handles the install for both StylusApp and the test bundle. The
+test bundle has GENERATE_INFOPLIST_FILE: YES so device builds get
+a real Info.plist to sign against (sim builds let it slide; device
+builds don't). Either way `make test` resolves a concrete UUID and
+passes it to `xcodebuild ... -destination 'platform=...,id=<uuid>'`,
+which dodges name-formatting fragility and stays portable.
 
 [PlayQueueTests.swift](Tests/StylusAppTests/PlayQueueTests.swift) is
 the first test file. It doubles as a behavioural spec for parity
