@@ -491,12 +491,36 @@ stylus-ios/
                               long-press preview: closure for parity.
         PodcastsView.swift    Podcasts tab + PodcastDetailView, grouped
                               by track.podcast.
-        SearchView.swift      Search tab; .searchable filters tracks by
-                              title / artist / album live.
+        SearchView.swift      Search tab. .searchable matches across
+                              tracks, artists, albums, podcasts,
+                              podcast episodes, and playlists; results
+                              render in fixed-order Sections per type
+                              and each row's second line is the
+                              category label (Track / Artist / Album /
+                              Podcast / Podcast episode / Playlist).
+                              Track rows render as "Artist - Title"
+                              via titleOverride. Group rows push typed
+                              nav values (SearchArtistKey /
+                              SearchPodcastKey wrap String, AlbumKey +
+                              PlaylistKey reused) so the local
+                              .navigationDestination registrations
+                              don't collide with the parent stack's
+                              String-keyed routes. The "Search your
+                              library" prompt is suppressed while
+                              @Environment(\.isSearching) is true (so
+                              the prompt doesn't shout at the user
+                              from beneath the keyboard); it returns
+                              the moment the user dismisses search.
         TrackRow.swift        Pure-presentation row used by every track
                               list (All Songs, Artist, Album, Podcast,
                               Search). Speaker glyph next to the title
                               indicates the currently-playing track.
+                              Optional titleOverride / subtitleOverride
+                              replace the standard track.displayTitle +
+                              "artist - album" subtitle; SearchView
+                              passes "Artist - Title" + "Track" /
+                              "Podcast episode" so each search row
+                              announces what kind of result it is.
         TrackRowButton.swift  Button wrapper that, on tap, sets the queue
                               to the visible-track slice and starts
                               playback at the tapped row. Long-press
@@ -514,6 +538,10 @@ stylus-ios/
                               .alignmentGuide(.listRowSeparatorLeading)
                               pins the row separator to the cell's
                               leading edge (matches album-art left).
+                              Forwards optional titleOverride +
+                              subtitleOverride to TrackRow + the
+                              long-press preview's TrackRow (used by
+                              SearchView).
         RowTapFeedback.swift  RowTapButtonStyle: ButtonStyle with the
                               row press visuals (scale 0.97 + opacity
                               0.65) and a light haptic on press-down.

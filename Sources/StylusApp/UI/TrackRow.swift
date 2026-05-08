@@ -7,6 +7,18 @@ struct TrackRow: View
 {
     let track:     Track
     let isPlaying: Bool
+    // When non-nil, replaces the standard track.displayTitle on the
+    // first line. SearchView uses this to render tracks as
+    // "Artist - Title" so the artist is visible at a glance in a
+    // results list that mixes track / artist / album / playlist /
+    // podcast hits.
+    var titleOverride:    String? = nil
+    // When non-nil, replaces the standard "artist - album" subtitle.
+    // Used by SearchView to label each result row with the result's
+    // type ("Track", "Podcast episode") in place of the usual
+    // metadata pair, since the search list mixes types and the type
+    // is what the user is scanning for at that moment.
+    var subtitleOverride: String? = nil
 
     @State private var artwork: UIImage?
 
@@ -19,7 +31,7 @@ struct TrackRow: View
             {
                 HStack(spacing: 6)
                 {
-                    Text(track.displayTitle)
+                    Text(titleOverride ?? track.displayTitle)
                         .lineLimit(1)
                     if isPlaying
                     {
@@ -28,9 +40,10 @@ struct TrackRow: View
                             .foregroundStyle(.tint)
                     }
                 }
-                if !track.subtitle.isEmpty
+                let subtitleText = subtitleOverride ?? track.subtitle
+                if !subtitleText.isEmpty
                 {
-                    Text(track.subtitle)
+                    Text(subtitleText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

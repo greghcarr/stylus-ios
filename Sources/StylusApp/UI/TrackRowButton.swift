@@ -7,6 +7,12 @@ struct TrackRowButton: View
 {
     let track:         Track
     let visibleTracks: [Track]
+    // Optional overrides forwarded to the underlying TrackRow + the
+    // long-press preview's TrackRow. Lets SearchView render track
+    // hits as "Artist - Title" with a "Track" subtitle, in place of
+    // the standard "Title" + "artist - album" pair.
+    var titleOverride:    String? = nil
+    var subtitleOverride: String? = nil
 
     @EnvironmentObject var queue:     PlayQueue
     @EnvironmentObject var audio:     AudioPlayer
@@ -24,8 +30,10 @@ struct TrackRowButton: View
         }
         label:
         {
-            TrackRow(track: track,
-                     isPlaying: audio.currentTrack?.filePath == track.filePath)
+            TrackRow(track:            track,
+                     isPlaying:        audio.currentTrack?.filePath == track.filePath,
+                     titleOverride:    titleOverride,
+                     subtitleOverride: subtitleOverride)
         }
         // RowTapButtonStyle is also responsible for the .plain
         // foreground treatment (overrides Button's default accent
@@ -117,8 +125,10 @@ struct TrackRowButton: View
         // so the artwork shows up immediately with no flash.
         preview:
         {
-            TrackRow(track: track,
-                     isPlaying: audio.currentTrack?.filePath == track.filePath)
+            TrackRow(track:            track,
+                     isPlaying:        audio.currentTrack?.filePath == track.filePath,
+                     titleOverride:    titleOverride,
+                     subtitleOverride: subtitleOverride)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .frame(maxWidth: 360)

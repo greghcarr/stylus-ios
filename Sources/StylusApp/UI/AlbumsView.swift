@@ -28,23 +28,21 @@ struct AlbumsView: View
             {
                 NavigationLink(value: AllSongsKey())
                 {
-                    HStack(spacing: 12)
-                    {
-                        Image(systemName: "square.stack.fill")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, height: 44)
-                        Text("All Albums")
-                        Spacer()
-                        Text("\(allMusicTracks.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    LibraryIconRow(icon:  "square.stack.fill",
+                                   title: "All Albums",
+                                   count: allMusicTracks.count)
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .hideFirstRowSeparator(true)
-                .tracksContextMenu(suggestedName: { "All Albums" })
-                                  { allMusicTracks }
+                .tracksContextMenu(
+                    suggestedName: { "All Albums" },
+                    tracksFor:     { allMusicTracks },
+                    preview: {
+                        LibraryIconRow(icon:  "square.stack.fill",
+                                       title: "All Albums",
+                                       count: allMusicTracks.count)
+                    }
+                )
             }
 
             // "(no album)" -- italics flags this as a special
@@ -53,38 +51,42 @@ struct AlbumsView: View
             {
                 NavigationLink(value: NoAlbumKey())
                 {
-                    HStack(spacing: 12)
-                    {
-                        Image(systemName: "square.dashed")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, height: 44)
-                        Text("(no album)").italic()
-                        Spacer()
-                        Text("\(noAlbumTracks.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    LibraryDashedRow(title: "(no album)",
+                                   count: noAlbumTracks.count)
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .tracksContextMenu(suggestedName: { "" })
-                                  { noAlbumTracks }
+                .tracksContextMenu(
+                    suggestedName: { "" },
+                    tracksFor:     { noAlbumTracks },
+                    preview: {
+                        LibraryDashedRow(title: "(no album)",
+                                       count: noAlbumTracks.count)
+                    }
+                )
             }
 
             ForEach(albums, id: \.id)
             { key in
                 NavigationLink(value: key)
                 {
-                    AlbumRow(key: key,
-                             representativePath: representativePath(for: key))
+                    AlbumRow(key:                key,
+                             representativePath: representativePath(for: key),
+                             count:              trackCount(for: key))
                 }
                 // Pin the row separator's leading edge to the cell's
                 // leading edge (same as the Library tab) so it lines
                 // up with the album-thumb's left side instead of
                 // SwiftUI's default content-derived inset.
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .tracksContextMenu(suggestedName: { key.album })
-                                  { tracks(forAlbum: key) }
+                .tracksContextMenu(
+                    suggestedName: { key.album },
+                    tracksFor:     { tracks(forAlbum: key) },
+                    preview: {
+                        AlbumRow(key:                key,
+                                 representativePath: representativePath(for: key),
+                                 count:              trackCount(for: key))
+                    }
+                )
             }
             TransportBarBottomSpacer()
         }
@@ -149,6 +151,16 @@ struct AlbumsView: View
         library.tracks.first(where: { $0.album == key.album && $0.artist == key.artist })?.filePath
     }
 
+    private func trackCount(for key: AlbumKey) -> Int
+    {
+        library.tracks.reduce(0)
+        { acc, t in
+            (!t.isPodcast && t.album == key.album && t.artist == key.artist)
+                ? acc + 1
+                : acc
+        }
+    }
+
     // Tracks of one album, ordered the same way AlbumDetailView
     // displays them (track number then title). Used by the
     // tracksContextMenu so "Play Next" / "Add to Queue" / "Add to
@@ -173,6 +185,7 @@ private struct AlbumRow: View
 {
     let key:                AlbumKey
     let representativePath: String?
+    let count:              Int
 
     @State private var artwork: UIImage?
 
@@ -192,6 +205,10 @@ private struct AlbumRow: View
                         .lineLimit(1)
                 }
             }
+            Spacer()
+            Text("\(count)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
         }
         .task(id: representativePath)
         {
