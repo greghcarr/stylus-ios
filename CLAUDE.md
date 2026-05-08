@@ -213,7 +213,6 @@ reliably on the simulator). Bumped from 16 in 2026-05.
 make           # regenerate StylusApp.xcodeproj from project.yml
 make build     # unsigned verification build for iOS device
 make build-sim # unsigned verification build for iOS Simulator
-make test      # run StylusAppTests on an iOS Simulator
 make clean     # wipe build/ + build-ios-* CMake build trees
 ```
 
@@ -1025,45 +1024,6 @@ so regressions are easy to attribute via `git bisect`.
   or padding. The pin defeats that default. Apply the modifier on every
   row even if the row currently has no leading icon, so future leading
   icons don't accidentally shift the divider.
-
-## Tests
-Tests live in [Tests/StylusAppTests/](Tests/StylusAppTests/), wired
-into a `bundle.unit-test` target in [project.yml](project.yml) that
-depends on the `StylusApp` target so test files can `@testable import
-Stylus` and reach internal types directly. Tests run hosted (TEST_HOST
-= the StylusApp bundle), which lets future tests touch the bridged
-C++ core without a separate link step.
-
-`make test` prefers a connected physical iPhone (resolved via
-`xcrun xctrace list devices`) and falls back to the first available
-iPhone simulator only if no phone is connected. Physical-device
-tests work because project.yml sets DEVELOPMENT_TEAM, so auto-signing
-handles the install for both StylusApp and the test bundle. The
-test bundle has GENERATE_INFOPLIST_FILE: YES so device builds get
-a real Info.plist to sign against (sim builds let it slide; device
-builds don't). Either way `make test` resolves a concrete UUID and
-passes it to `xcodebuild ... -destination 'platform=...,id=<uuid>'`,
-which dodges name-formatting fragility and stays portable.
-
-[PlayQueueTests.swift](Tests/StylusAppTests/PlayQueueTests.swift) is
-the first test file. It doubles as a behavioural spec for parity
-with the desktop's `Stylus::PlayQueue`: when shuffle / repeat
-semantics change on the desktop, update both the test (to capture
-the new spec) and PlayQueue.swift (to satisfy it). Coverage:
-cursor mechanics, insertions, shuffle invariants
-(current-track-to-zero, track-set preservation, idempotence),
-unshuffle (restores original order with playing track at its
-original index), setQueue resets shuffle, insertNext / append while
-shuffled feed originalTracks, repeat-mode cycle, advanceForAutoFinish
-per repeat mode, manual advance never wraps even with repeat-all.
-
-JUCE's leak detector fires "Leaked objects detected" warnings at
-process exit because the StylusApp's JUCE singletons (AnalysisEngine,
-AppleMusicLookup, MessageManager, AudioFormatManager, etc.) aren't
-explicitly torn down. These are exit-time noise during test-host
-shutdown, not actual leaks that affect tests; they were noisy but
-benign on the desktop too. Ignore them unless they appear during the
-test run itself.
 
 ## Doc maintenance (mandatory)
 Update **this file and [README.md](README.md)** whenever a change touches:
