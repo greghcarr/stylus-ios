@@ -62,36 +62,27 @@ struct RootView: View
                 // tab content stationary across sheet presentations.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if audio.currentTrack != nil
-            {
-                // No backdrop layer behind the sheet -- the
-                // tabsLayer (the active library / artists / etc.
-                // tab) shows through above and around the sheet,
-                // so as the user drags the sheet down they see
-                // their main app emerge from behind it. The status
-                // bar renders over whatever the underlying tab has
-                // there (its own background, navigation chrome,
-                // etc.).
-                //
-                // The condition is `currentTrack != nil` only --
-                // intentionally NOT `&& sheetY < screenH`. With the
-                // narrower condition, the sheet was inserted into
-                // the view tree at every present and removed at
-                // every dismiss, and SwiftUI rebuilt the whole
-                // ZStack on each transition. That insertion was
-                // resetting the underlying List's UIScrollView
-                // state and toggling the trailing scroll-indicator
-                // track in / out, visibly shifting list rows by
-                // ~3 pt during the animation. Keeping the sheet
-                // resident once a track is loaded -- and just
-                // animating its offset -- holds the underlying
-                // scroll views stable.
-                NowPlayingSheet(
-                    sheetY:    $sheetY,
-                    onDismiss: { dismissSheet() }
-                )
-                .offset(y: max(0, sheetY))
-            }
+            // NowPlayingSheet is rendered unconditionally and just
+            // offset off-screen via sheetY when it shouldn't be
+            // visible. Conditional rendering (even the narrower
+            // `currentTrack != nil`) caused every nil → non-nil
+            // transition to insert the sheet into the ZStack,
+            // which reset the underlying List's UIScrollView state
+            // and toggled the trailing scroll-indicator track --
+            // visible to the user as a ~3 pt horizontal shrink
+            // every time a song was selected after the queue had
+            // emptied. Always-rendering keeps the children stable.
+            //
+            // The "no track" else branch in NowPlayingSheet shows a
+            // simple "Nothing playing" placeholder; the user can't
+            // actually reach it because TransportBar hides itself
+            // when there's no current track, so there's no tap
+            // affordance to expand the sheet during that state.
+            NowPlayingSheet(
+                sheetY:    $sheetY,
+                onDismiss: { dismissSheet() }
+            )
+            .offset(y: max(0, sheetY))
         }
         // No scenePhase auto-present: the sheet is only ever lifted
         // by an explicit user gesture (tap the mini transport bar or
@@ -102,6 +93,20 @@ struct RootView: View
         // looks identical to any other refocus -- so the heuristic
         // ended up over-presenting (Control Center dismissals,
         // returning from another app, etc.) and felt aggressive.
+        //
+        // When a track ends and the queue empties (currentTrack goes
+        // nil), pre-park sheetY at screenH so the sheet's resident
+        // view stays off-screen. Without this, if the user had the
+        // sheet open while the last track played and never dismissed
+        // it, sheetY would still be 0 by the time they pick another
+        // song -- and the now-resident sheet would re-appear
+        // unexpectedly. Resetting on the empty-queue boundary makes
+        // the next song's playback start with a clean off-screen
+        // sheet that only shows up if the user explicitly raises it.
+        .onChange(of: audio.currentTrack?.filePath)
+        { _, newPath in
+            if newPath == nil { sheetY = screenH }
+        }
         // Custom env key (NOT .environmentObject) so consumers don't
         // subscribe to the router's @Published current. See the
         // explanation above the TabRouter declaration in

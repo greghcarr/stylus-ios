@@ -338,14 +338,19 @@ stylus-ios/
                               .styl-art.jpg sidecar.
       UI/
         RootView.swift        ZStack with the TabView (system tab bar
-                              hidden) and the NowPlayingSheet rendered on
-                              top whenever a track is loaded. Owns sheetY
-                              (single source of truth for the sheet's
-                              vertical position -- 0 = fully expanded,
-                              screenH = at the TransportBar). The sheet
-                              is shown only by explicit gesture (tap the
-                              mini transport bar or drag it up); no
-                              scenePhase auto-present. The TransportBar
+                              hidden) and the NowPlayingSheet always
+                              rendered on top, off-screen via sheetY
+                              when the user hasn't lifted it. Owns
+                              sheetY (single source of truth for the
+                              sheet's vertical position -- 0 = fully
+                              expanded, screenH = at the TransportBar).
+                              The sheet is shown only by explicit
+                              gesture (tap the mini transport bar or
+                              drag it up); no scenePhase auto-present.
+                              On audio.currentTrack going nil (queue
+                              played out), sheetY is reset to screenH
+                              so the next song's playback doesn't
+                              inherit a stale visible-sheet position. The TransportBar
                               lives below the TabView in a VStack so the
                               system tab bar (when visible) sits ABOVE
                               the bar; currently the system tab bar is
