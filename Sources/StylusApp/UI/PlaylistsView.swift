@@ -25,17 +25,11 @@ struct PlaylistsView: View
             { (index, playlist) in
                 NavigationLink(value: PlaylistKey(id: playlist.id))
                 {
-                    HStack(spacing: 12)
-                    {
-                        Image(systemName: "list.bullet.rectangle.fill")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 24)
-                        Text(playlist.name).lineLimit(1)
-                        Spacer()
-                        Text("\(playlist.trackPaths.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    CompositeArtworkRow(
+                        representativePaths: representativePaths(for: playlist),
+                        title:               playlist.name,
+                        count:               playlist.trackPaths.count
+                    )
                 }
                 // Pin the separator's leading edge to the cell's
                 // leading edge so the divider extends symmetrically
@@ -45,19 +39,26 @@ struct PlaylistsView: View
                 .hideFirstRowSeparator(index == 0)
                 .tracksContextMenu(
                     suggestedName: { playlist.name },
-                    tracksFor:     { resolvedTracks(for: playlist) }
+                    tracksFor:     { resolvedTracks(for: playlist) },
+                    preview: {
+                        CompositeArtworkRow(
+                            representativePaths: representativePaths(for: playlist),
+                            title:               playlist.name,
+                            count:               playlist.trackPaths.count
+                        )
+                    },
+                    additionalItems: {
+                        Divider()
+                        Button(role: .destructive)
+                        {
+                            playlists.deletePlaylist(id: playlist.id)
+                        }
+                        label:
+                        {
+                            Label("Delete Playlist", systemImage: "trash")
+                        }
+                    }
                 )
-                {
-                    Divider()
-                    Button(role: .destructive)
-                    {
-                        playlists.deletePlaylist(id: playlist.id)
-                    }
-                    label:
-                    {
-                        Label("Delete Playlist", systemImage: "trash")
-                    }
-                }
             }
             .onDelete
             { offsets in
@@ -72,34 +73,38 @@ struct PlaylistsView: View
             // playlists -- iOS-Music style, where the create-action
             // is at the bottom of the list rather than competing
             // with the user's existing items at the top.
-            Button
+            //
+            // When NO playlists exist this in-list row is hidden
+            // and the empty-state overlay below presents its own
+            // New Playlist button right beneath the explanation
+            // text -- "Tap New Playlist below..." then the actual
+            // button, no scrolling required.
+            if !playlists.playlists.isEmpty
             {
-                newPlaylistName = ""
-                showCreateAlert = true
-            }
-            label:
-            {
-                HStack(spacing: 12)
+                Button
                 {
-                    // .secondary (grey) rather than .tint (blue) so
-                    // the icon reads as a list-row affordance rather
-                    // than a primary-action accent. The text stays
-                    // primary-coloured via RowTapButtonStyle.
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24)
-                    Text("New Playlist")
-                    Spacer()
+                    newPlaylistName = ""
+                    showCreateAlert = true
                 }
+                label:
+                {
+                    HStack(spacing: 12)
+                    {
+                        // .tint (blue) reads as a primary "create"
+                        // action; 44 pt frame matches the playlist
+                        // rows above. Text stays primary-coloured
+                        // via RowTapButtonStyle.
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.tint)
+                            .frame(width: 44, height: 44)
+                        Text("New Playlist")
+                        Spacer()
+                    }
+                }
+                .buttonStyle(RowTapButtonStyle())
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
             }
-            .buttonStyle(RowTapButtonStyle())
-            .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-            // When the playlist list is empty this is the very first
-            // row; otherwise its top separator is the boundary with
-            // the last playlist row above it (still wanted, so leave
-            // hideFirstRowSeparator off).
-            .hideFirstRowSeparator(playlists.playlists.isEmpty)
 
             TransportBarBottomSpacer()
         }
@@ -117,8 +122,26 @@ struct PlaylistsView: View
                 EmptyStateView(
                     title:       "No playlists",
                     systemImage: "list.bullet.rectangle",
-                    message:     "Tap New Playlist above to create one. Then long-press any track and choose Add to Playlist."
+                    message:     "Tap New Playlist below to create one. Then long-press any track and choose Add to Playlist."
                 )
+                {
+                    // The action button slot lives at the bottom
+                    // of the empty-state stack, just below the
+                    // explanation text -- so the user reads
+                    // "Tap New Playlist below..." and sees the
+                    // button immediately underneath.
+                    Button
+                    {
+                        newPlaylistName = ""
+                        showCreateAlert = true
+                    }
+                    label:
+                    {
+                        Label("New Playlist", systemImage: "plus.circle.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 8)
+                }
             }
         }
         // Native iOS new-playlist alert. Using .alert keeps the
@@ -154,10 +177,60 @@ struct PlaylistsView: View
     // view uses for its display.
     private func resolvedTracks(for playlist: Playlist) -> [Track]
     {
-        playlist.trackPaths.compactMap
+        let (byPath, byTail) = libraryLookupTables()
+        return playlist.trackPaths.compactMap
         { path in
-            library.tracks.first(where: { $0.filePath == path })
+            byPath[path]
+                ?? byTail[PlaylistDetailView.sandboxRelativeTail(path)]
         }
+    }
+
+    // Up to 8 representative file paths from this playlist (one per
+    // distinct (artist, album) pair encountered in playlist order),
+    // feeding the row's CompositeArtworkThumb. Walks trackPaths
+    // sequentially so the first-seen track of each album wins, and
+    // stops once we've collected 8 -- enough to give the composite
+    // 4 successful thumbnail loads with margin for albums that have
+    // no artwork.
+    //
+    // Resolves stale-container paths via the same sandbox-relative-
+    // tail fallback PlaylistDetailView uses, then returns the
+    // CURRENT library path so the artwork load hits the right file.
+    private func representativePaths(for playlist: Playlist) -> [String]
+    {
+        let (byPath, byTail) = libraryLookupTables()
+        var seen: Set<String> = []
+        var paths: [String] = []
+        for storedPath in playlist.trackPaths
+        {
+            let track = byPath[storedPath]
+                ?? byTail[PlaylistDetailView.sandboxRelativeTail(storedPath)]
+            guard let track = track else { continue }
+            let albumKey = track.artist + "\u{1F}" + track.album
+            if seen.insert(albumKey).inserted
+            {
+                paths.append(track.filePath)
+                if paths.count >= 8 { break }
+            }
+        }
+        return paths
+    }
+
+    private func libraryLookupTables() -> (byPath: [String: Track],
+                                            byTail: [String: Track])
+    {
+        var byPath: [String: Track] = [:]
+        var byTail: [String: Track] = [:]
+        for track in library.tracks
+        {
+            byPath[track.filePath] = track
+            let tail = PlaylistDetailView.sandboxRelativeTail(track.filePath)
+            if tail != track.filePath
+            {
+                byTail[tail] = track
+            }
+        }
+        return (byPath, byTail)
     }
 }
 
@@ -325,14 +398,72 @@ struct PlaylistDetailView: View
     // longer in the library). Preserving the originalIndex lets edits
     // operate on the storage-level path list, not just the visible
     // subset.
+    //
+    // Lookup is two-pass: first by exact filePath match (fast), then
+    // by the path's iOS-sandbox-relative tail. The tail fallback
+    // handles the case where a track was added to a playlist under
+    // an older app data-container UUID; iOS reassigns that UUID on
+    // some installs / restores, leaving the stored playlist paths
+    // pointing at a directory the current install no longer uses.
+    // Same files / same relative structure, just a different
+    // container-prefix, so matching on the post-UUID tail finds them.
     private func displayEntries(for playlist: Playlist) -> [DisplayEntry]
     {
-        playlist.trackPaths.enumerated().compactMap
+        let (byPath, byTail) = libraryLookupTables()
+
+        return playlist.trackPaths.enumerated().compactMap
         { (index, path) in
-            guard let track = library.tracks.first(where: { $0.filePath == path })
-            else { return nil }
-            return DisplayEntry(originalIndex: index, track: track)
+            if let track = byPath[path]
+            {
+                return DisplayEntry(originalIndex: index, track: track)
+            }
+            let tail = Self.sandboxRelativeTail(path)
+            if let track = byTail[tail]
+            {
+                return DisplayEntry(originalIndex: index, track: track)
+            }
+            return nil
         }
+    }
+
+    // Builds two lookup tables over library.tracks in one pass,
+    // keyed by full path and by sandbox-relative tail. Used by
+    // displayEntries to do the two-stage lookup without making
+    // it O(N x M) over the playlist size.
+    private func libraryLookupTables() -> (byPath: [String: Track],
+                                            byTail: [String: Track])
+    {
+        var byPath: [String: Track] = [:]
+        var byTail: [String: Track] = [:]
+        for track in library.tracks
+        {
+            byPath[track.filePath] = track
+            let tail = Self.sandboxRelativeTail(track.filePath)
+            if tail != track.filePath
+            {
+                byTail[tail] = track
+            }
+        }
+        return (byPath, byTail)
+    }
+
+    // Strips the iOS app-sandbox container prefix from a path,
+    // returning everything from the directory after the container
+    // UUID onwards. For a typical iOS path like
+    //   /private/var/mobile/Containers/Data/Application/<UUID>/Documents/...
+    // returns
+    //   Documents/...
+    // For a path that doesn't carry the sandbox marker the original
+    // path is returned unchanged -- so two non-sandbox paths still
+    // compare exactly.
+    fileprivate static func sandboxRelativeTail(_ path: String) -> String
+    {
+        guard let containers = path.range(of: "/Containers/Data/Application/")
+        else { return path }
+        let afterMarker = path[containers.upperBound...]
+        guard let firstSlash = afterMarker.firstIndex(of: "/")
+        else { return path }
+        return String(afterMarker[afterMarker.index(after: firstSlash)...])
     }
 }
 
@@ -364,29 +495,6 @@ struct AddToPlaylistSheet: View
         {
             List
             {
-                Button
-                {
-                    // Seed the alert's text field with whatever the
-                    // call site suggested (the album name, artist,
-                    // playlist name, etc.). If nothing was passed,
-                    // it opens blank.
-                    newPlaylistName = suggestedName
-                    showCreateAlert = true
-                }
-                label:
-                {
-                    HStack(spacing: 12)
-                    {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.tint)
-                            .frame(width: 24)
-                        Text("New Playlist")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                    }
-                }
-
                 ForEach(playlists.playlists)
                 { playlist in
                     Button
@@ -417,7 +525,39 @@ struct AddToPlaylistSheet: View
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 }
+
+                // "New Playlist" sits at the bottom of the list,
+                // matching the Playlists tab itself -- the create-
+                // action goes BELOW the user's existing playlists
+                // rather than competing with them at the top.
+                Button
+                {
+                    // Seed the alert's text field with whatever the
+                    // call site suggested (the album name, artist,
+                    // playlist name, etc.). If nothing was passed,
+                    // it opens blank.
+                    newPlaylistName = suggestedName
+                    showCreateAlert = true
+                }
+                label:
+                {
+                    HStack(spacing: 12)
+                    {
+                        // .tint (blue) reads as a primary "create"
+                        // action against the otherwise-grey existing-
+                        // playlist rows.
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.tint)
+                            .frame(width: 24)
+                        Text("New Playlist")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                    }
+                }
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
             }
             .listStyle(.plain)
             .listSectionSeparator(.hidden)

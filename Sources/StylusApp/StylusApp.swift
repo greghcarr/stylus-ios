@@ -56,6 +56,15 @@ struct StylusApp: App
                         library.scan(music:   folder.musicFolderURL,
                                      podcast: folder.podcastFolderURL)
                     }
+                    // Self-heal playlist trackPaths against the
+                    // (now-loaded) library so any path stored under
+                    // an older sandbox-container UUID gets rewritten
+                    // to the current one. No-op when nothing's stale.
+                    // library.scan synchronously populates tracks
+                    // from the on-disk cache before returning, so
+                    // libraryTracks is non-empty here even when the
+                    // background scan hasn't finished yet.
+                    playlists.migratePathsIfNeeded(against: library.tracks)
                 }
         }
     }

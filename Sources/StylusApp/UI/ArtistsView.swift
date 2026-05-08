@@ -58,19 +58,21 @@ struct ArtistsView: View
             {
                 NavigationLink(value: AllArtistsKey())
                 {
-                    HStack
-                    {
-                        Text("All Artists")
-                        Spacer()
-                        Text("\(allMusicTracks.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    LibraryIconRow(icon:  "person.2.fill",
+                                   title: "All Artists",
+                                   count: allMusicTracks.count)
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .hideFirstRowSeparator(true)
-                .tracksContextMenu(suggestedName: { "All Artists" })
-                                  { allMusicTracks }
+                .tracksContextMenu(
+                    suggestedName: { "All Artists" },
+                    tracksFor:     { allMusicTracks },
+                    preview: {
+                        LibraryIconRow(icon:  "person.2.fill",
+                                       title: "All Artists",
+                                       count: allMusicTracks.count)
+                    }
+                )
             }
 
             // "(no artist)" -- italics to flag this as a special
@@ -83,36 +85,38 @@ struct ArtistsView: View
             {
                 NavigationLink(value: "")
                 {
-                    HStack
-                    {
-                        Text("(no artist)").italic()
-                        Spacer()
-                        Text("\(noArtistTracks.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    LibraryDashedRow(title: "(no artist)",
+                                   count: noArtistTracks.count)
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .tracksContextMenu(suggestedName: { "" })
-                                  { noArtistTracks }
+                .tracksContextMenu(
+                    suggestedName: { "" },
+                    tracksFor:     { noArtistTracks },
+                    preview: {
+                        LibraryDashedRow(title: "(no artist)",
+                                       count: noArtistTracks.count)
+                    }
+                )
             }
 
             ForEach(artistRows, id: \.name)
             { row in
                 NavigationLink(value: row.name)
                 {
-                    HStack
-                    {
-                        Text(row.name)
-                        Spacer()
-                        Text("\(row.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    ArtistRowView(name:                row.name,
+                                  count:               row.count,
+                                  representativePaths: row.representativePaths)
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .tracksContextMenu(suggestedName: { row.name })
-                                  { tracks(forArtist: row.name) }
+                .tracksContextMenu(
+                    suggestedName: { row.name },
+                    tracksFor:     { tracks(forArtist: row.name) },
+                    preview: {
+                        ArtistRowView(name:                row.name,
+                                      count:               row.count,
+                                      representativePaths: row.representativePaths)
+                    }
+                )
             }
             TransportBarBottomSpacer()
         }
@@ -138,20 +142,50 @@ struct ArtistsView: View
         }
     }
 
-    // Distinct non-empty artist names with track counts. Tracks with
-    // empty artist tag are NOT bucketed here -- they're surfaced
-    // through the "(no artist)" sentinel above so the alphabetical
-    // list stays free of empty-string entries.
+    // Distinct non-empty artist names with track counts AND a small
+    // sample of representative file paths (one per album, up to 8
+    // alphabetically). The sample feeds ArtistRowView's artwork-
+    // thumbnail composite: it tries each path's thumbnail in order,
+    // keeps the first 4 successful loads, and renders 0 / 1 / 2x2
+    // accordingly. Tracks with empty artist tag are NOT bucketed
+    // here -- they're surfaced through the "(no artist)" sentinel
+    // above so the alphabetical list stays free of empty-string
+    // entries.
     private var artistRows: [ArtistRow]
     {
-        var counts: [String: Int] = [:]
+        // count + per-album representative path (one track per
+        // distinct album for this artist). album -> path map is
+        // first-track-wins so the same path is surfaced consistently
+        // across launches.
+        var byArtist: [String: (count: Int, albumToPath: [String: String])] = [:]
+
         for t in library.tracks where !t.isPodcast
         {
             guard !t.artist.isEmpty else { continue }
-            counts[t.artist, default: 0] += 1
+            var entry = byArtist[t.artist] ?? (count: 0, albumToPath: [:])
+            entry.count += 1
+            if entry.albumToPath[t.album] == nil
+            {
+                entry.albumToPath[t.album] = t.filePath
+            }
+            byArtist[t.artist] = entry
         }
-        return counts.map { ArtistRow(name: $0.key, count: $0.value) }
-                     .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        let rows = byArtist.map
+        { (name, info) -> ArtistRow in
+            // Sort album names for stable sampling, then take up to 8
+            // representative paths. The 8-cap keeps thumbnail work
+            // bounded even when an artist has many albums; the
+            // ArtistRowView only needs 4 successful loads.
+            let albums = info.albumToPath.keys.sorted
+                { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            let paths = albums.prefix(8).compactMap { info.albumToPath[$0] }
+            return ArtistRow(name:                name,
+                             count:               info.count,
+                             representativePaths: Array(paths))
+        }
+        return rows.sorted
+        { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     // Every music track in the library, ignoring podcasts. Used by
@@ -191,8 +225,39 @@ struct ArtistsView: View
 
     private struct ArtistRow
     {
-        let name:  String
-        let count: Int
+        let name:                String
+        let count:               Int
+        // Representative file paths (one per distinct album for this
+        // artist), sorted by album name, capped at 8 by the builder.
+        // ArtistRowView walks them in order, keeping the first 4
+        // whose thumbnail loads successfully.
+        let representativePaths: [String]
+    }
+}
+
+// MARK: - ArtistRowView (per-artist row, with composite artwork)
+
+// Single artist row in the Artists tab. Layout: 44 pt composite
+// thumbnail (CompositeArtworkThumb -- 2 x 2 / 1 / dotted-square
+// depending on how many representative albums have artwork) +
+// artist name + per-artist track count.
+private struct ArtistRowView: View
+{
+    let name:                String
+    let count:               Int
+    let representativePaths: [String]
+
+    var body: some View
+    {
+        HStack(spacing: 12)
+        {
+            CompositeArtworkThumb(representativePaths: representativePaths)
+            Text(name).lineLimit(1)
+            Spacer()
+            Text("\(count)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -267,22 +332,21 @@ struct ArtistDetailView: View
             // track for this artist regardless of album tag.
             NavigationLink(value: ArtistAllSongsKey(artist: artist))
             {
-                HStack(spacing: 12)
-                {
-                    Image(systemName: "square.stack.fill")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
-                    Text("All Albums")
-                    Spacer()
-                    Text("\(allTracks.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
+                LibraryIconRow(icon:  "square.stack.fill",
+                               title: "All Albums",
+                               count: allTracks.count)
             }
             .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
             .hideFirstRowSeparator(true)
-            .tracksContextMenu(suggestedName: { artist }) { allTracks }
+            .tracksContextMenu(
+                suggestedName: { artist },
+                tracksFor:     { allTracks },
+                preview: {
+                    LibraryIconRow(icon:  "square.stack.fill",
+                                   title: "All Albums",
+                                   count: allTracks.count)
+                }
+            )
 
             // "(no album)" -- only when this artist has tracks
             // without an album tag. Pushes AlbumKey(artist, "")
@@ -292,24 +356,18 @@ struct ArtistDetailView: View
             {
                 NavigationLink(value: AlbumKey(artist: artist, album: ""))
                 {
-                    HStack(spacing: 12)
-                    {
-                        // Same 44-pt slot the album thumbnails below
-                        // use, so the row's text aligns vertically
-                        // with the album-name text.
-                        Image(systemName: "square.dashed")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, height: 44)
-                        Text("(no album)").italic()
-                        Spacer()
-                        Text("\(noAlbumTracks.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    LibraryDashedRow(title: "(no album)",
+                                   count: noAlbumTracks.count)
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .tracksContextMenu(suggestedName: { "" }) { noAlbumTracks }
+                .tracksContextMenu(
+                    suggestedName: { "" },
+                    tracksFor:     { noAlbumTracks },
+                    preview: {
+                        LibraryDashedRow(title: "(no album)",
+                                       count: noAlbumTracks.count)
+                    }
+                )
             }
 
             ForEach(albumNames, id: \.self)
@@ -324,8 +382,18 @@ struct ArtistDetailView: View
                     )
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .tracksContextMenu(suggestedName: { albumName })
-                                  { tracks(forAlbum: albumName) }
+                .tracksContextMenu(
+                    suggestedName: { albumName },
+                    tracksFor:     { tracks(forAlbum: albumName) },
+                    preview: {
+                        ArtistAlbumRow(
+                            artist:             artist,
+                            album:              albumName,
+                            trackCount:         trackCount(forAlbum: albumName),
+                            representativePath: representativePath(for: albumName)
+                        )
+                    }
+                )
             }
             TransportBarBottomSpacer()
         }
@@ -542,42 +610,38 @@ struct AllArtistsView: View
         {
             NavigationLink(value: AllSongsKey())
             {
-                HStack(spacing: 12)
-                {
-                    Image(systemName: "square.stack.fill")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
-                    Text("All Albums")
-                    Spacer()
-                    Text("\(allTracks.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
+                LibraryIconRow(icon:  "square.stack.fill",
+                               title: "All Albums",
+                               count: allTracks.count)
             }
             .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
             .hideFirstRowSeparator(true)
-            .tracksContextMenu(suggestedName: { "All Albums" }) { allTracks }
+            .tracksContextMenu(
+                suggestedName: { "All Albums" },
+                tracksFor:     { allTracks },
+                preview: {
+                    LibraryIconRow(icon:  "square.stack.fill",
+                                   title: "All Albums",
+                                   count: allTracks.count)
+                }
+            )
 
             if !noAlbumTracks.isEmpty
             {
                 NavigationLink(value: NoAlbumKey())
                 {
-                    HStack(spacing: 12)
-                    {
-                        Image(systemName: "square.dashed")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, height: 44)
-                        Text("(no album)").italic()
-                        Spacer()
-                        Text("\(noAlbumTracks.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    LibraryDashedRow(title: "(no album)",
+                                   count: noAlbumTracks.count)
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .tracksContextMenu(suggestedName: { "" }) { noAlbumTracks }
+                .tracksContextMenu(
+                    suggestedName: { "" },
+                    tracksFor:     { noAlbumTracks },
+                    preview: {
+                        LibraryDashedRow(title: "(no album)",
+                                       count: noAlbumTracks.count)
+                    }
+                )
             }
 
             ForEach(albumKeys)
@@ -591,8 +655,17 @@ struct AllArtistsView: View
                     )
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .tracksContextMenu(suggestedName: { key.album })
-                                  { tracks(forAlbumKey: key) }
+                .tracksContextMenu(
+                    suggestedName: { key.album },
+                    tracksFor:     { tracks(forAlbumKey: key) },
+                    preview: {
+                        AllArtistsAlbumRow(
+                            key:                key,
+                            trackCount:         trackCount(forAlbumKey: key),
+                            representativePath: representativePath(for: key)
+                        )
+                    }
+                )
             }
             TransportBarBottomSpacer()
         }

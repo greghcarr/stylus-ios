@@ -12,26 +12,29 @@ struct PodcastsView: View
             { (index, row) in
                 NavigationLink(value: row.name)
                 {
-                    HStack
-                    {
-                        Image(systemName: "mic.fill")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 24)
-                        Text(row.name)
-                        Spacer()
-                        Text("\(row.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    CompositeArtworkRow(
+                        representativePaths: row.representativePaths,
+                        title:               row.name,
+                        count:               row.count
+                    )
                 }
                 // Pin the row separator's leading edge to the cell's
                 // leading edge (same as the Library tab) so it lines
-                // up with the show icon's left side instead of
+                // up with the artwork-thumb's left side instead of
                 // SwiftUI's default content-derived inset.
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .hideFirstRowSeparator(index == 0)
-                .tracksContextMenu(suggestedName: { row.name })
-                                  { episodes(forShow: row.name) }
+                .tracksContextMenu(
+                    suggestedName: { row.name },
+                    tracksFor:     { episodes(forShow: row.name) },
+                    preview: {
+                        CompositeArtworkRow(
+                            representativePaths: row.representativePaths,
+                            title:               row.name,
+                            count:               row.count
+                        )
+                    }
+                )
             }
             TransportBarBottomSpacer()
         }
@@ -54,16 +57,48 @@ struct PodcastsView: View
         }
     }
 
+    // Each show row carries the per-show count plus up to 8
+    // representative episode paths -- one per distinct (artist,
+    // album) pair within the show, falling back to "first 8
+    // episodes" when the show's metadata doesn't tag artist/album.
+    // The composite artwork thumb walks these in order, keeping the
+    // first 4 successful thumbnail loads.
     private var showRows: [ShowRow]
     {
-        var counts: [String: Int] = [:]
+        var byShow: [String: (count: Int, albumToPath: [String: String])] = [:]
+
         for t in library.tracks where t.isPodcast
         {
             let name = t.podcast.isEmpty ? "Unknown" : t.podcast
-            counts[name, default: 0] += 1
+            var entry = byShow[name] ?? (count: 0, albumToPath: [:])
+            entry.count += 1
+            // For podcasts the (artist, album) pair is often empty
+            // or identical for every episode of a show, so fall back
+            // to the file path itself as the de-dup key when both
+            // tags are missing -- ensures we still surface up to N
+            // distinct episode artworks instead of collapsing to a
+            // single bucket.
+            let pairKey = t.artist + "\u{1F}" + t.album
+            let albumKey = (t.artist.isEmpty && t.album.isEmpty)
+                ? t.filePath
+                : pairKey
+            if entry.albumToPath[albumKey] == nil
+            {
+                entry.albumToPath[albumKey] = t.filePath
+            }
+            byShow[name] = entry
         }
-        return counts.map { ShowRow(name: $0.key, count: $0.value) }
-                     .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        let rows = byShow.map
+        { (name, info) -> ShowRow in
+            let albumKeys = info.albumToPath.keys.sorted()
+            let paths = albumKeys.prefix(8).compactMap { info.albumToPath[$0] }
+            return ShowRow(name:                name,
+                           count:               info.count,
+                           representativePaths: Array(paths))
+        }
+        return rows.sorted
+        { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     // Episodes of one show, ordered the same way PodcastDetailView
@@ -86,8 +121,9 @@ struct PodcastsView: View
 
     private struct ShowRow
     {
-        let name:  String
-        let count: Int
+        let name:                String
+        let count:               Int
+        let representativePaths: [String]
     }
 }
 

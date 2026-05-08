@@ -98,6 +98,72 @@ final class PlaylistStore: ObservableObject
         save()
     }
 
+    // MARK: - Path migration
+
+    // Walks every playlist's stored trackPaths and rewrites any entry
+    // that no longer matches a current library track exactly but does
+    // match one by sandbox-relative tail (i.e. the iOS app data-
+    // container UUID changed since the path was originally stored).
+    // The result is the playlists.json file is rewritten with current-
+    // container paths, so subsequent in-process lookups hit the fast
+    // direct-match path and the JSON stays in sync with the live
+    // library.
+    //
+    // Called once per launch from RootView/StylusApp after the
+    // library has loaded its cache. No-op when nothing needs
+    // migrating, so this is cheap to call unconditionally.
+    func migratePathsIfNeeded(against libraryTracks: [Track])
+    {
+        guard !playlists.isEmpty, !libraryTracks.isEmpty else { return }
+
+        // Build the same lookup tables PlaylistDetailView uses --
+        // direct-path and sandbox-relative-tail -- so we can match
+        // a stale path by tail and recover the canonical filePath.
+        var byPath: [String: String] = [:]
+        var byTail: [String: String] = [:]
+        for t in libraryTracks
+        {
+            byPath[t.filePath] = t.filePath
+            let tail = Self.sandboxRelativeTail(t.filePath)
+            if tail != t.filePath
+            {
+                byTail[tail] = t.filePath
+            }
+        }
+
+        var changed = 0
+        for pi in playlists.indices
+        {
+            for ti in playlists[pi].trackPaths.indices
+            {
+                let stored = playlists[pi].trackPaths[ti]
+                if byPath[stored] != nil { continue }   // already current
+                let tail = Self.sandboxRelativeTail(stored)
+                if let canonical = byTail[tail], canonical != stored
+                {
+                    playlists[pi].trackPaths[ti] = canonical
+                    changed += 1
+                }
+            }
+        }
+
+        if changed > 0 { save() }
+    }
+
+    // Same path-tail logic PlaylistDetailView uses; duplicated here
+    // so PlaylistStore doesn't need to import the UI module / view
+    // file. The two implementations must stay in sync -- if you
+    // change one, change the other (or extract to a shared helper).
+    private static func sandboxRelativeTail(_ path: String) -> String
+    {
+        guard let containers = path.range(of: "/Containers/Data/Application/")
+        else { return path }
+        let after = path[containers.upperBound...]
+        guard let firstSlash = after.firstIndex(of: "/")
+        else { return path }
+        return String(after[after.index(after: firstSlash)...])
+    }
+
     // MARK: - Persistence
 
     private func save()

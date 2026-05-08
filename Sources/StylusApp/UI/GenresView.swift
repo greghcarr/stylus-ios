@@ -27,19 +27,21 @@ struct GenresView: View
             {
                 NavigationLink(value: AllSongsKey())
                 {
-                    HStack
-                    {
-                        Text("All Genres")
-                        Spacer()
-                        Text("\(allMusicTracks.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    LibraryIconRow(icon:  "tag.fill",
+                                   title: "All Genres",
+                                   count: allMusicTracks.count)
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .hideFirstRowSeparator(true)
-                .tracksContextMenu(suggestedName: { "All Genres" })
-                                  { allMusicTracks }
+                .tracksContextMenu(
+                    suggestedName: { "All Genres" },
+                    tracksFor:     { allMusicTracks },
+                    preview: {
+                        LibraryIconRow(icon:  "tag.fill",
+                                       title: "All Genres",
+                                       count: allMusicTracks.count)
+                    }
+                )
             }
 
             // "(no genre)" -- italics flags this as a special category.
@@ -48,35 +50,42 @@ struct GenresView: View
             {
                 NavigationLink(value: NoGenreKey())
                 {
-                    HStack
-                    {
-                        Text("(no genre)").italic()
-                        Spacer()
-                        Text("\(noGenreTracks.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    LibraryDashedRow(title: "(no genre)",
+                                   count: noGenreTracks.count)
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .tracksContextMenu(suggestedName: { "" }) { noGenreTracks }
+                .tracksContextMenu(
+                    suggestedName: { "" },
+                    tracksFor:     { noGenreTracks },
+                    preview: {
+                        LibraryDashedRow(title: "(no genre)",
+                                       count: noGenreTracks.count)
+                    }
+                )
             }
 
             ForEach(genreRows, id: \.name)
             { row in
                 NavigationLink(value: GenreKey(name: row.name))
                 {
-                    HStack
-                    {
-                        Text(row.name)
-                        Spacer()
-                        Text("\(row.count)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+                    CompositeArtworkRow(
+                        representativePaths: row.representativePaths,
+                        title:               row.name,
+                        count:               row.count
+                    )
                 }
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .tracksContextMenu(suggestedName: { row.name })
-                                  { tracks(forGenre: row.name) }
+                .tracksContextMenu(
+                    suggestedName: { row.name },
+                    tracksFor:     { tracks(forGenre: row.name) },
+                    preview: {
+                        CompositeArtworkRow(
+                            representativePaths: row.representativePaths,
+                            title:               row.name,
+                            count:               row.count
+                        )
+                    }
+                )
             }
             TransportBarBottomSpacer()
         }
@@ -121,16 +130,40 @@ struct GenresView: View
     // Empty-genre tracks are skipped rather than bucketed into an
     // "Unknown" row -- consistent with how Artists and Albums omit
     // empty values.
+    //
+    // Each row also carries up to 8 representative file paths (one
+    // per distinct (artist, album) pair within the genre, sorted
+    // alphabetically) feeding the composite artwork thumb.
     private var genreRows: [GenreRow]
     {
-        var counts: [String: Int] = [:]
+        var byGenre: [String: (count: Int, albumToPath: [String: String])] = [:]
+
         for t in library.tracks where !t.isPodcast
         {
             guard !t.genre.isEmpty else { continue }
-            counts[t.genre, default: 0] += 1
+            var entry = byGenre[t.genre] ?? (count: 0, albumToPath: [:])
+            entry.count += 1
+            // Same (artist, album) string can appear under multiple
+            // artists with the same album title; key by both so each
+            // such combination contributes a separate thumbnail.
+            let albumKey = t.artist + "\u{1F}" + t.album
+            if entry.albumToPath[albumKey] == nil
+            {
+                entry.albumToPath[albumKey] = t.filePath
+            }
+            byGenre[t.genre] = entry
         }
-        return counts.map { GenreRow(name: $0.key, count: $0.value) }
-                     .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        let rows = byGenre.map
+        { (name, info) -> GenreRow in
+            let albumKeys = info.albumToPath.keys.sorted()
+            let paths = albumKeys.prefix(8).compactMap { info.albumToPath[$0] }
+            return GenreRow(name:                name,
+                            count:               info.count,
+                            representativePaths: Array(paths))
+        }
+        return rows.sorted
+        { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     // Tracks of one genre, ordered the same way GenreDetailView
@@ -159,8 +192,9 @@ struct GenresView: View
 
     private struct GenreRow
     {
-        let name:  String
-        let count: Int
+        let name:                String
+        let count:               Int
+        let representativePaths: [String]
     }
 }
 

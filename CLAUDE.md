@@ -277,6 +277,15 @@ stylus-ios/
                               tracks-within-playlists. nextId derived
                               from max(existing ids) + 1 on load -- no
                               separate on-disk counter to keep in sync.
+                              Also exposes migratePathsIfNeeded(against:)
+                              which rewrites stored trackPaths whose
+                              sandbox-container UUID has changed since
+                              the playlist was saved (matches a stale
+                              path against the live library by
+                              sandbox-relative tail). Called once per
+                              launch from StylusApp.swift's .task so
+                              playlists.json self-heals after Xcode
+                              reinstalls and the like.
         MusicFolderStore.swift Holds the user-picked music folder URL,
                               persists it as a security-scoped bookmark.
         ArtworkCache.swift    NSCache of decoded UIImage keyed by file path,
@@ -407,15 +416,46 @@ stylus-ios/
                               prefill.
         TracksContextMenu.swift
                               .tracksContextMenu(suggestedName:
-                              tracksFor:) modifier providing the
+                              tracksFor: preview:) modifier providing
                               "Play Next / Add to Queue / Add to
                               Playlist..." long-press actions on any
                               row that represents a track group
                               (album, artist, genre, podcast,
-                              playlist). Optional additionalItems
-                              ViewBuilder slot for per-callsite
-                              extras (used by playlist rows for the
-                              destructive Delete entry).
+                              playlist). Required preview: ViewBuilder
+                              gives every group row the same long-
+                              press preview shape (rounded rectangle,
+                              padded, frame(maxWidth: 360)) so the
+                              dismissal animation no longer morphs
+                              from rounded to square -- matches the
+                              parity TrackRowButton already had.
+                              Optional additionalItems ViewBuilder
+                              for per-callsite extras (playlist rows
+                              add the destructive Delete entry).
+        CompositeArtworkThumb.swift
+                              44 x 44 thumbnail that renders 0 / 1 /
+                              2x2 grid of album thumbs depending on
+                              how many of the supplied
+                              representativePaths produce artwork.
+                              Used by every "group of tracks" row
+                              (artists, genres, playlists, podcasts).
+                              Empty grid slots are transparent so the
+                              row's natural background shows through.
+                              Empty-state branch + the per-app
+                              "(no X)" rows share the same
+                              DashedSquarePlaceholder (defined here)
+                              so every "no value for this category"
+                              glyph in the app looks identical.
+        LibraryIconRow.swift  Three shared row shapes for "All X" /
+                              per-X / "(no X)" sentinels, factored
+                              out of the per-tab views: LibraryIconRow
+                              (SF-Symbol icon + title + count for
+                              All X), CompositeArtworkRow (composite
+                              2x2 thumb + title + count for per-X),
+                              LibraryDashedRow (dashed-square
+                              placeholder + italic title + count for
+                              "(no X)"). Sharing the row shapes also
+                              lets each tab pass the same view as
+                              long-press preview: closure for parity.
         PodcastsView.swift    Podcasts tab + PodcastDetailView, grouped
                               by track.podcast.
         SearchView.swift      Search tab; .searchable filters tracks by

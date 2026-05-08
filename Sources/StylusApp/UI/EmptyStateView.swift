@@ -15,17 +15,22 @@ import SwiftUI
 // low" to the user. Extending into the safe areas gives us the full
 // screen height to centre against; the chrome still draws on top so
 // nothing is clipped or hidden.
-struct EmptyStateView: View
+struct EmptyStateView<Action: View>: View
 {
     let title:       String
     let systemImage: String
     let message:     String?
+    let action:      Action
 
-    init(title: String, systemImage: String, message: String? = nil)
+    init(title:                  String,
+         systemImage:            String,
+         message:                String?  = nil,
+         @ViewBuilder action:    () -> Action)
     {
         self.title       = title
         self.systemImage = systemImage
         self.message     = message
+        self.action      = action()
     }
 
     var body: some View
@@ -48,11 +53,28 @@ struct EmptyStateView: View
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                 }
+                action
             }
             .padding()
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
+    }
+}
+
+// Convenience overload for callers that don't need a trailing
+// action: omit the closure entirely. Same shape as the original
+// init so every existing call site keeps working unchanged.
+extension EmptyStateView where Action == EmptyView
+{
+    init(title:                  String,
+         systemImage:            String,
+         message:                String? = nil)
+    {
+        self.init(title:       title,
+                  systemImage: systemImage,
+                  message:     message)
+        { EmptyView() }
     }
 }

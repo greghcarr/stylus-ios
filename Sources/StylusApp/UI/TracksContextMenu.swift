@@ -2,36 +2,37 @@ import SwiftUI
 
 extension View
 {
-    // No-extras variant: just the standard three entries (Play Next /
-    // Add to Queue / Add to Playlist...).
-    func tracksContextMenu(suggestedName: @escaping () -> String  = { "" },
-                           tracksFor:     @escaping () -> [Track]) -> some View
+    // No-extras variant: Play Next / Add to Queue / Add to Playlist...
+    // entries plus a custom rounded preview matching the row's
+    // content. preview is required so every row type that uses this
+    // modifier gets the same long-press visual as TrackRowButton.
+    func tracksContextMenu<Preview: View>(
+        suggestedName: @escaping () -> String  = { "" },
+        tracksFor:     @escaping () -> [Track],
+        @ViewBuilder preview: @escaping () -> Preview
+    ) -> some View
     {
         tracksContextMenu(suggestedName: suggestedName,
-                          tracksFor:     tracksFor)
+                          tracksFor:     tracksFor,
+                          preview:       preview)
         {
             EmptyView()
         }
     }
 
     // Variant that appends caller-supplied items below the standard
-    // three. Used by the playlist-row long-press menu to add a
-    // destructive "Delete Playlist" action; nothing else needs the
-    // extra slot today, but the hook is generic so other surfaces
-    // (e.g. "Remove Album" later) can plug in without a second
-    // helper.
-    //
-    // Splitting into two overloads avoids the Swift limitation where
-    // a generic @ViewBuilder closure can't carry a meaningful
-    // default value.
-    func tracksContextMenu<Extra: View>(
-        suggestedName: @escaping () -> String = { "" },
+    // three (used by playlist rows for the destructive Delete entry).
+    // preview is required for the same reason as above.
+    func tracksContextMenu<Preview: View, Extra: View>(
+        suggestedName: @escaping () -> String  = { "" },
         tracksFor:     @escaping () -> [Track],
+        @ViewBuilder preview:         @escaping () -> Preview,
         @ViewBuilder additionalItems: @escaping () -> Extra
     ) -> some View
     {
         modifier(TracksContextMenu(suggestedName:    suggestedName,
                                    tracksFor:        tracksFor,
+                                   previewContent:   preview,
                                    additionalItems:  additionalItems))
     }
 }
@@ -40,19 +41,21 @@ extension View
 // expensive filtering / sorting only runs at action time.
 //
 // `suggestedName` provides a default value for the New Playlist
-// alert's name field when the user picks "Add to Playlist..." ->
-// "New Playlist". Each call site passes the row's contextual name
-// (album title, artist, genre, etc.) so the alert opens pre-filled
-// with it.
+// alert's name field.
 //
-// TrackRowButton has its own contextMenu with the same three core
-// entries plus Look up on iTunes / Edit Info..., so it doesn't use
-// this helper -- but the wording and ordering of the shared entries
-// match here so the menu feels consistent across row types.
-private struct TracksContextMenu<Extra: View>: ViewModifier
+// `previewContent` is the row's content rendered fresh for the
+// long-press preview; the modifier wraps it in consistent padding +
+// a 360-pt max width so every row in the app long-presses to the
+// same shape and size, matching TrackRowButton's behaviour.
+//
+// .contentShape(.contextMenuPreview, RoundedRectangle) locks the
+// preview's clipping shape so iOS doesn't morph rounded -> square
+// on dismissal. Same fix TrackRowButton uses.
+private struct TracksContextMenu<Preview: View, Extra: View>: ViewModifier
 {
     let suggestedName:    () -> String
     let tracksFor:        () -> [Track]
+    let previewContent:   () -> Preview
     let additionalItems:  () -> Extra
 
     @EnvironmentObject var queue: PlayQueue
@@ -64,6 +67,9 @@ private struct TracksContextMenu<Extra: View>: ViewModifier
     func body(content: Content) -> some View
     {
         content
+            .contentShape(.contextMenuPreview,
+                          RoundedRectangle(cornerRadius: 12,
+                                           style:        .continuous))
             .contextMenu
             {
                 Button
@@ -97,6 +103,13 @@ private struct TracksContextMenu<Extra: View>: ViewModifier
                 }
 
                 additionalItems()
+            }
+            preview:
+            {
+                previewContent()
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: 360)
             }
             .sheet(isPresented: $showAddToPlaylist)
             {
