@@ -74,6 +74,7 @@ final class AudioPlayer: ObservableObject
         self.queue = queue
         engine.attach(node)
         configureSession()
+        registerSessionObservers()
     }
 
     func attach(queue: PlayQueue)
@@ -84,8 +85,118 @@ final class AudioPlayer: ObservableObject
     private func configureSession()
     {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback)
+        // .playback gives us the standard "music app" priority so the
+        // system doesn't silence us under Silent switch / lock. .default
+        // mode is the right choice for general A/V playback (no speech
+        // ducking, no measurement-mode artefacts).
+        try? session.setCategory(.playback, mode: .default)
         try? session.setActive(true)
+    }
+
+    // Registers handlers for the three AVAudioSession lifecycle
+    // notifications a music app needs to react to:
+    //   - interruptionNotification: phone call, alarm, another app's
+    //     audio session takes over. We pause on .began, optionally
+    //     resume on .ended if iOS hints we should.
+    //   - routeChangeNotification: AirPods unplugged / Bluetooth
+    //     disconnected. iOS pauses audio output but doesn't tell our
+    //     engine; we mirror Apple Music's behaviour and pause so
+    //     audio doesn't suddenly blast out the phone speaker.
+    //   - mediaServicesWereResetNotification: the audio server
+    //     restarted (rare; recovery from a system audio crash). Our
+    //     engine + node references are now stale and need to be
+    //     rebuilt before any further playback.
+    private func registerSessionObservers()
+    {
+        let nc = NotificationCenter.default
+
+        nc.addObserver(forName:  AVAudioSession.interruptionNotification,
+                       object:   nil,
+                       queue:    .main)
+        { [weak self] note in
+            Task { @MainActor [weak self] in
+                self?.handleInterruption(note)
+            }
+        }
+
+        nc.addObserver(forName:  AVAudioSession.routeChangeNotification,
+                       object:   nil,
+                       queue:    .main)
+        { [weak self] note in
+            Task { @MainActor [weak self] in
+                self?.handleRouteChange(note)
+            }
+        }
+
+        nc.addObserver(forName:  AVAudioSession.mediaServicesWereResetNotification,
+                       object:   nil,
+                       queue:    .main)
+        { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleMediaServicesReset()
+            }
+        }
+    }
+
+    private func handleInterruption(_ note: Notification)
+    {
+        guard let typeRaw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type    = AVAudioSession.InterruptionType(rawValue: typeRaw)
+        else { return }
+
+        switch type
+        {
+        case .began:
+            // Pause via our normal path so isPlaying flips to false,
+            // the timer stops, NowPlayingController publishes
+            // (elapsed, rate=0), and the lock screen / Control Center
+            // stay aligned with the silent reality.
+            if isPlaying { pause() }
+
+        case .ended:
+            // Resume only when the system hints we should -- some
+            // interruptions (e.g. phone call) end with the option set;
+            // others (Siri "Hey, what's the weather") usually don't,
+            // and forcing a resume would clash with the user's intent.
+            let optsRaw = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let opts    = AVAudioSession.InterruptionOptions(rawValue: optsRaw)
+            if opts.contains(.shouldResume), currentTrack != nil
+            {
+                try? AVAudioSession.sharedInstance().setActive(true)
+                resume()
+            }
+
+        @unknown default:
+            break
+        }
+    }
+
+    private func handleRouteChange(_ note: Notification)
+    {
+        guard let reasonRaw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason    = AVAudioSession.RouteChangeReason(rawValue: reasonRaw)
+        else { return }
+
+        // Only the "old device unavailable" reason warrants a pause:
+        // the user just unplugged headphones or AirPods walked out of
+        // range, and continuing through the phone speaker would be
+        // surprising. Other reasons (new device available, category
+        // change) don't need our intervention.
+        if reason == .oldDeviceUnavailable, isPlaying { pause() }
+    }
+
+    private func handleMediaServicesReset()
+    {
+        // Rare but documented: the audio server restarted under us.
+        // Anything we held against the old server is dead; tear down
+        // and let the next play() rebuild from scratch. The user will
+        // see the track stop, which is the least-bad option short of
+        // a full engine rebuild here (the engine + node would need
+        // reconstruction, which we can't do safely from a notification
+        // callback without coordinating with whatever's currently in
+        // flight).
+        stop()
+        configureSession()
     }
 
     // MARK: - Playback control

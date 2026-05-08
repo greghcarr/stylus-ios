@@ -752,6 +752,34 @@ lock-screen seek bar drifts behind real playback by up to a tick
 on every pause -- compounding into visible misalignment between the
 in-app and lock-screen scrubbers.
 
+### AVAudioSession lifecycle
+AudioPlayer registers three notification observers on construction:
+
+- **`interruptionNotification`**: fires on phone calls, alarms, and
+  another app activating an exclusive audio session (e.g. Apple
+  Music starting). On `.began` we call `pause()` so isPlaying flips
+  to false and the lock screen / Control Center stay aligned with
+  the silent reality. On `.ended` we resume **only** if the
+  notification's options include `.shouldResume` -- some
+  interruptions hint that the user wants playback back (phone call
+  hung up), others don't (Siri "what's the weather"), and forcing
+  a resume against the user's intent is worse than leaving the
+  track paused.
+- **`routeChangeNotification`**: AirPods unplugged, Bluetooth
+  speaker walked out of range, headphone cable yanked. We pause on
+  `.oldDeviceUnavailable` only; other reasons (new device added,
+  category change) don't need our intervention. Mirrors Apple
+  Music's "don't suddenly blast out the phone speaker" behaviour.
+- **`mediaServicesWereResetNotification`**: the iOS audio server
+  restarted under us (rare but documented). Engine + node refs are
+  now stale; we `stop()` and re-`configureSession()` so the next
+  `play()` rebuilds cleanly. A surviving track + queue position is
+  the user's job to resume.
+
+The session category is `.playback` with mode `.default`: standard
+"music app" priority, no speech ducking, no measurement-mode
+artefacts. The category isn't reconfigured on the fly.
+
 ### Now Playing center + remote commands
 [NowPlayingController.swift](Sources/StylusApp/Audio/NowPlayingController.swift)
 is constructed once in [StylusApp.swift](Sources/StylusApp/StylusApp.swift)
