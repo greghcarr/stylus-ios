@@ -41,6 +41,14 @@ struct LibraryIconRow: View
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
+        // Make the entire row width hit-testable. Without this, the
+        // Spacer in the middle is a hole in the Button's hit area
+        // (Buttons hit-test their label's natural shape, which
+        // excludes empty layout space), so taps that land between
+        // the title and the count count as misses. NavigationLink
+        // used to auto-extend tap to the full cell, but the row
+        // wrappers are Buttons now.
+        .contentShape(Rectangle())
     }
 }
 
@@ -65,6 +73,14 @@ struct CompositeArtworkRow: View
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
+        // Make the entire row width hit-testable. Without this, the
+        // Spacer in the middle is a hole in the Button's hit area
+        // (Buttons hit-test their label's natural shape, which
+        // excludes empty layout space), so taps that land between
+        // the title and the count count as misses. NavigationLink
+        // used to auto-extend tap to the full cell, but the row
+        // wrappers are Buttons now.
+        .contentShape(Rectangle())
     }
 }
 
@@ -91,5 +107,13 @@ struct LibraryDashedRow: View
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
+        // Make the entire row width hit-testable. Without this, the
+        // Spacer in the middle is a hole in the Button's hit area
+        // (Buttons hit-test their label's natural shape, which
+        // excludes empty layout space), so taps that land between
+        // the title and the count count as misses. NavigationLink
+        // used to auto-extend tap to the full cell, but the row
+        // wrappers are Buttons now.
+        .contentShape(Rectangle())
     }
 }

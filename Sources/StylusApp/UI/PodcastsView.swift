@@ -2,7 +2,8 @@ import SwiftUI
 
 struct PodcastsView: View
 {
-    @EnvironmentObject var library: LibraryStore
+    @EnvironmentObject        var library: LibraryStore
+    @Environment(\.tabRouter) private var router
 
     var body: some View
     {
@@ -10,7 +11,11 @@ struct PodcastsView: View
         {
             ForEach(Array(showRows.enumerated()), id: \.element.name)
             { (index, row) in
-                NavigationLink(value: row.name)
+                Button
+                {
+                    router?.path.append(row.name)
+                }
+                label:
                 {
                     CompositeArtworkRow(
                         representativePaths: row.representativePaths,
@@ -18,6 +23,7 @@ struct PodcastsView: View
                         count:               row.count
                     )
                 }
+                .buttonStyle(RowTapButtonStyle())
                 // Pin the row separator's leading edge to the cell's
                 // leading edge (same as the Library tab) so it lines
                 // up with the artwork-thumb's left side instead of

@@ -44,7 +44,8 @@ struct ArtistAllSongsKey: Hashable
 
 struct ArtistsView: View
 {
-    @EnvironmentObject var library: LibraryStore
+    @EnvironmentObject        var library: LibraryStore
+    @Environment(\.tabRouter) private var router
 
     var body: some View
     {
@@ -56,12 +57,17 @@ struct ArtistsView: View
             // takes over).
             if !artistRows.isEmpty
             {
-                NavigationLink(value: AllArtistsKey())
+                Button
+                {
+                    router?.path.append(AllArtistsKey())
+                }
+                label:
                 {
                     LibraryIconRow(icon:  "person.2.fill",
                                    title: "All Artists",
                                    count: allMusicTracks.count)
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .hideFirstRowSeparator(true)
                 .tracksContextMenu(
@@ -83,11 +89,16 @@ struct ArtistsView: View
             // the artist == "" filter naturally.
             if !noArtistTracks.isEmpty
             {
-                NavigationLink(value: "")
+                Button
+                {
+                    router?.path.append("")
+                }
+                label:
                 {
                     LibraryDashedRow(title: "(no artist)",
                                    count: noArtistTracks.count)
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .tracksContextMenu(
                     suggestedName: { "" },
@@ -101,12 +112,17 @@ struct ArtistsView: View
 
             ForEach(artistRows, id: \.name)
             { row in
-                NavigationLink(value: row.name)
+                Button
+                {
+                    router?.path.append(row.name)
+                }
+                label:
                 {
                     ArtistRowView(name:                row.name,
                                   count:               row.count,
                                   representativePaths: row.representativePaths)
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .tracksContextMenu(
                     suggestedName: { row.name },
@@ -258,6 +274,9 @@ private struct ArtistRowView: View
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
+        // Make the entire row hit-testable so the Button wrapper
+        // catches taps in the Spacer area too.
+        .contentShape(Rectangle())
     }
 }
 
@@ -267,7 +286,8 @@ struct ArtistDetailView: View
 {
     let artist: String
 
-    @EnvironmentObject var library: LibraryStore
+    @EnvironmentObject        var library: LibraryStore
+    @Environment(\.tabRouter) private var router
 
     var body: some View
     {
@@ -330,12 +350,17 @@ struct ArtistDetailView: View
         {
             // "All Albums" -- existing behaviour, reaches every
             // track for this artist regardless of album tag.
-            NavigationLink(value: ArtistAllSongsKey(artist: artist))
+            Button
+            {
+                router?.path.append(ArtistAllSongsKey(artist: artist))
+            }
+            label:
             {
                 LibraryIconRow(icon:  "square.stack.fill",
                                title: "All Albums",
                                count: allTracks.count)
             }
+            .buttonStyle(RowTapButtonStyle())
             .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
             .hideFirstRowSeparator(true)
             .tracksContextMenu(
@@ -354,11 +379,16 @@ struct ArtistDetailView: View
             // (album == "" AND artist == this artist).
             if !noAlbumTracks.isEmpty
             {
-                NavigationLink(value: AlbumKey(artist: artist, album: ""))
+                Button
+                {
+                    router?.path.append(AlbumKey(artist: artist, album: ""))
+                }
+                label:
                 {
                     LibraryDashedRow(title: "(no album)",
                                    count: noAlbumTracks.count)
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .tracksContextMenu(
                     suggestedName: { "" },
@@ -372,7 +402,11 @@ struct ArtistDetailView: View
 
             ForEach(albumNames, id: \.self)
             { albumName in
-                NavigationLink(value: AlbumKey(artist: artist, album: albumName))
+                Button
+                {
+                    router?.path.append(AlbumKey(artist: artist, album: albumName))
+                }
+                label:
                 {
                     ArtistAlbumRow(
                         artist:             artist,
@@ -381,6 +415,7 @@ struct ArtistDetailView: View
                         representativePath: representativePath(for: albumName)
                     )
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .tracksContextMenu(
                     suggestedName: { albumName },
@@ -510,6 +545,9 @@ private struct ArtistAlbumRow: View
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
+        // Make the entire row hit-testable so the Button wrapper
+        // catches taps in the Spacer area too.
+        .contentShape(Rectangle())
         .task(id: representativePath)
         {
             guard let p = representativePath else { return }
@@ -602,18 +640,24 @@ struct ArtistAllSongsView: View
 // reached as a top-level tab and stays a pure album list.
 struct AllArtistsView: View
 {
-    @EnvironmentObject var library: LibraryStore
+    @EnvironmentObject        var library: LibraryStore
+    @Environment(\.tabRouter) private var router
 
     var body: some View
     {
         List
         {
-            NavigationLink(value: AllSongsKey())
+            Button
+            {
+                router?.path.append(AllSongsKey())
+            }
+            label:
             {
                 LibraryIconRow(icon:  "square.stack.fill",
                                title: "All Albums",
                                count: allTracks.count)
             }
+            .buttonStyle(RowTapButtonStyle())
             .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
             .hideFirstRowSeparator(true)
             .tracksContextMenu(
@@ -628,11 +672,16 @@ struct AllArtistsView: View
 
             if !noAlbumTracks.isEmpty
             {
-                NavigationLink(value: NoAlbumKey())
+                Button
+                {
+                    router?.path.append(NoAlbumKey())
+                }
+                label:
                 {
                     LibraryDashedRow(title: "(no album)",
                                    count: noAlbumTracks.count)
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .tracksContextMenu(
                     suggestedName: { "" },
@@ -646,7 +695,11 @@ struct AllArtistsView: View
 
             ForEach(albumKeys)
             { key in
-                NavigationLink(value: key)
+                Button
+                {
+                    router?.path.append(key)
+                }
+                label:
                 {
                     AllArtistsAlbumRow(
                         key:                key,
@@ -654,6 +707,7 @@ struct AllArtistsView: View
                         representativePath: representativePath(for: key)
                     )
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .tracksContextMenu(
                     suggestedName: { key.album },
@@ -783,6 +837,9 @@ private struct AllArtistsAlbumRow: View
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
+        // Make the entire row hit-testable so the Button wrapper
+        // catches taps in the Spacer area too.
+        .contentShape(Rectangle())
         .task(id: representativePath)
         {
             guard let p = representativePath else { return }

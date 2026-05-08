@@ -72,6 +72,9 @@ private struct SearchGroupRow: View
             }
             Spacer()
         }
+        // Make the entire row hit-testable so the Button wrapper
+        // catches taps in the Spacer area too.
+        .contentShape(Rectangle())
     }
 }
 
@@ -80,6 +83,7 @@ private struct SearchContent: View
     let query: String
 
     @Environment(\.isSearching) private var isSearching
+    @Environment(\.tabRouter)   private var router
     @EnvironmentObject var library:   LibraryStore
     @EnvironmentObject var playlists: PlaylistStore
 
@@ -161,7 +165,11 @@ private struct SearchContent: View
                 {
                     ForEach(r.artists, id: \.name)
                     { hit in
-                        NavigationLink(value: SearchArtistKey(artist: hit.name))
+                        Button
+                        {
+                            router?.path.append(SearchArtistKey(artist: hit.name))
+                        }
+                        label:
                         {
                             SearchGroupRow(
                                 representativePaths: hit.representativePaths,
@@ -169,6 +177,7 @@ private struct SearchContent: View
                                 typeLabel:           "Artist"
                             )
                         }
+                        .buttonStyle(RowTapButtonStyle())
                         .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                     }
                 }
@@ -180,7 +189,11 @@ private struct SearchContent: View
                 {
                     ForEach(r.albums, id: \.key.id)
                     { hit in
-                        NavigationLink(value: hit.key)
+                        Button
+                        {
+                            router?.path.append(hit.key)
+                        }
+                        label:
                         {
                             SearchGroupRow(
                                 representativePaths: hit.representativePaths,
@@ -188,6 +201,7 @@ private struct SearchContent: View
                                 typeLabel:           "Album"
                             )
                         }
+                        .buttonStyle(RowTapButtonStyle())
                         .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                     }
                 }
@@ -199,7 +213,11 @@ private struct SearchContent: View
                 {
                     ForEach(r.podcasts, id: \.name)
                     { hit in
-                        NavigationLink(value: SearchPodcastKey(show: hit.name))
+                        Button
+                        {
+                            router?.path.append(SearchPodcastKey(show: hit.name))
+                        }
+                        label:
                         {
                             SearchGroupRow(
                                 representativePaths: hit.representativePaths,
@@ -207,6 +225,7 @@ private struct SearchContent: View
                                 typeLabel:           "Podcast"
                             )
                         }
+                        .buttonStyle(RowTapButtonStyle())
                         .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                     }
                 }
@@ -231,7 +250,11 @@ private struct SearchContent: View
                 {
                     ForEach(r.playlists, id: \.playlist.id)
                     { hit in
-                        NavigationLink(value: PlaylistKey(id: hit.playlist.id))
+                        Button
+                        {
+                            router?.path.append(PlaylistKey(id: hit.playlist.id))
+                        }
+                        label:
                         {
                             SearchGroupRow(
                                 representativePaths: hit.representativePaths,
@@ -239,6 +262,7 @@ private struct SearchContent: View
                                 typeLabel:           "Playlist"
                             )
                         }
+                        .buttonStyle(RowTapButtonStyle())
                         .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                     }
                 }

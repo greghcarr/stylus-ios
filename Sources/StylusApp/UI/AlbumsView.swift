@@ -13,7 +13,8 @@ struct AlbumKey: Hashable, Identifiable
 
 struct AlbumsView: View
 {
-    @EnvironmentObject var library: LibraryStore
+    @EnvironmentObject        var library: LibraryStore
+    @Environment(\.tabRouter) private var router
 
     var body: some View
     {
@@ -26,12 +27,17 @@ struct AlbumsView: View
             // overlay takes over).
             if !allMusicTracks.isEmpty
             {
-                NavigationLink(value: AllSongsKey())
+                Button
+                {
+                    router?.path.append(AllSongsKey())
+                }
+                label:
                 {
                     LibraryIconRow(icon:  "square.stack.fill",
                                    title: "All Albums",
                                    count: allMusicTracks.count)
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .hideFirstRowSeparator(true)
                 .tracksContextMenu(
@@ -49,11 +55,16 @@ struct AlbumsView: View
             // category. Hidden when every track has an album tag.
             if !noAlbumTracks.isEmpty
             {
-                NavigationLink(value: NoAlbumKey())
+                Button
+                {
+                    router?.path.append(NoAlbumKey())
+                }
+                label:
                 {
                     LibraryDashedRow(title: "(no album)",
                                    count: noAlbumTracks.count)
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .tracksContextMenu(
                     suggestedName: { "" },
@@ -67,12 +78,17 @@ struct AlbumsView: View
 
             ForEach(albums, id: \.id)
             { key in
-                NavigationLink(value: key)
+                Button
+                {
+                    router?.path.append(key)
+                }
+                label:
                 {
                     AlbumRow(key:                key,
                              representativePath: representativePath(for: key),
                              count:              trackCount(for: key))
                 }
+                .buttonStyle(RowTapButtonStyle())
                 // Pin the row separator's leading edge to the cell's
                 // leading edge (same as the Library tab) so it lines
                 // up with the album-thumb's left side instead of
@@ -210,6 +226,10 @@ private struct AlbumRow: View
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
+        // Make the entire row hit-testable so the Button wrapper
+        // catches taps in the Spacer area too. See LibraryIconRow
+        // for the rationale.
+        .contentShape(Rectangle())
         .task(id: representativePath)
         {
             guard let p = representativePath else { return }

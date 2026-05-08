@@ -14,7 +14,8 @@ struct GenreKey: Hashable, Identifiable
 
 struct GenresView: View
 {
-    @EnvironmentObject var library: LibraryStore
+    @EnvironmentObject        var library: LibraryStore
+    @Environment(\.tabRouter) private var router
 
     var body: some View
     {
@@ -25,12 +26,17 @@ struct GenresView: View
             // view across the library.
             if !allMusicTracks.isEmpty
             {
-                NavigationLink(value: AllSongsKey())
+                Button
+                {
+                    router?.path.append(AllSongsKey())
+                }
+                label:
                 {
                     LibraryIconRow(icon:  "tag.fill",
                                    title: "All Genres",
                                    count: allMusicTracks.count)
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .hideFirstRowSeparator(true)
                 .tracksContextMenu(
@@ -48,11 +54,16 @@ struct GenresView: View
             // Hidden when every track has a genre tag.
             if !noGenreTracks.isEmpty
             {
-                NavigationLink(value: NoGenreKey())
+                Button
+                {
+                    router?.path.append(NoGenreKey())
+                }
+                label:
                 {
                     LibraryDashedRow(title: "(no genre)",
                                    count: noGenreTracks.count)
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .tracksContextMenu(
                     suggestedName: { "" },
@@ -66,7 +77,11 @@ struct GenresView: View
 
             ForEach(genreRows, id: \.name)
             { row in
-                NavigationLink(value: GenreKey(name: row.name))
+                Button
+                {
+                    router?.path.append(GenreKey(name: row.name))
+                }
+                label:
                 {
                     CompositeArtworkRow(
                         representativePaths: row.representativePaths,
@@ -74,6 +89,7 @@ struct GenresView: View
                         count:               row.count
                     )
                 }
+                .buttonStyle(RowTapButtonStyle())
                 .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 .tracksContextMenu(
                     suggestedName: { row.name },

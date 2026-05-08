@@ -11,8 +11,9 @@ struct PlaylistKey: Hashable
 
 struct PlaylistsView: View
 {
-    @EnvironmentObject var playlists: PlaylistStore
-    @EnvironmentObject var library:   LibraryStore
+    @EnvironmentObject        var playlists: PlaylistStore
+    @EnvironmentObject        var library:   LibraryStore
+    @Environment(\.tabRouter) private var router
 
     @State private var showCreateAlert: Bool   = false
     @State private var newPlaylistName: String = ""
@@ -23,7 +24,11 @@ struct PlaylistsView: View
         {
             ForEach(Array(playlists.playlists.enumerated()), id: \.element.id)
             { (index, playlist) in
-                NavigationLink(value: PlaylistKey(id: playlist.id))
+                Button
+                {
+                    router?.path.append(PlaylistKey(id: playlist.id))
+                }
+                label:
                 {
                     CompositeArtworkRow(
                         representativePaths: representativePaths(for: playlist),
@@ -31,6 +36,7 @@ struct PlaylistsView: View
                         count:               playlist.trackPaths.count
                     )
                 }
+                .buttonStyle(RowTapButtonStyle())
                 // Pin the separator's leading edge to the cell's
                 // leading edge so the divider extends symmetrically
                 // (without this it inset to where the row's content
