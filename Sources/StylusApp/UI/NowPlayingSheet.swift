@@ -132,6 +132,22 @@ struct NowPlayingSheet: View
         {
             sliderValue = audio.currentTime
         }
+        // Seed sliderValue on first mount. The two .onChange handlers
+        // above only fire when their observed value CHANGES, but on
+        // auto-present (scenePhase = .active after returning from
+        // another audio app, etc.) the sheet mounts cold while the
+        // track is paused at some non-zero offset. Without this
+        // seed, sliderValue stays at its initial 0 until the next
+        // tick of the AudioPlayer timer -- which doesn't tick while
+        // paused -- so the seek bar shows 0:00 even though the
+        // underlying audio.currentTime is correct. Hitting play
+        // would then snap the bar from 0:00 to the real position
+        // a moment later. .task fires every time the sheet mounts,
+        // so this also handles the dismiss/re-present cycle.
+        .task
+        {
+            sliderValue = audio.currentTime
+        }
     }
 
     // Single shared drag gesture used by BOTH the top handle area and
