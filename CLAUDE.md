@@ -169,8 +169,35 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
   .libraryActionsToolbar(scope:) at all so the menu icon is
   hidden and inaccessible there. Driven by a LibraryActions-
   Scope enum that the Coordinator switches on in buildMenu().
-- Phase 7+ (sync engine, ipad polish):
+- Phase 7d (shuffle + repeat in NowPlayingSheet): done. Two
+  smaller un-disced glyph buttons flank the three silver
+  transport discs in the full-screen sheet's transport row
+  (shuffle | prev | play | next | repeat), matching the
+  desktop's five-button mod-button-around-discs layout.
+  PlayQueue gained shuffle / repeat state machines that mirror
+  the desktop byte-for-byte:
+  - isShuffled toggle stores originalTracks snapshot, moves
+    current track to index 0, Fisher-Yates the rest.
+    unshuffle() restores originalTracks whole and places the
+    playing track at its original index. setQueue() resets
+    shuffle to off (a fresh row-tap is treated as a fresh
+    starting point, opt back into shuffle if wanted).
+    insertNext / append while shuffled also append to
+    originalTracks so a later unshuffle includes them.
+  - repeatMode three-state cycle (off / all / one) bound to
+    the repeat button's tap. AudioPlayer.handleTrackEnd now
+    calls queue.advanceForAutoFinish() instead of advance():
+    .one returns currentTrack (replay), .all wraps to index 0
+    at end of queue, .off returns nil at end (stop). Manual
+    next/prev still uses advance() / goBack() and never wraps
+    (matches desktop). Shuffle and repeat tints flip to
+    .accentColor when active so the silver discs stay the
+    visual anchor of the row.
+- Phase 8 (desktop-side sync engine via libimobiledevice):
   pending. See [IOS_PORT_PLAN](External/stylus/IOS_PORT_PLAN.md).
+- Phase X (aspirational): iPad NavigationSplitView + AirPlay +
+  general iPad polish, plus CarPlay (gated on Apple's CarPlay
+  Audio entitlement). May never ship.
 
 ## Build
 Day-to-day: open `StylusApp.xcodeproj` in Xcode, ⌘R. The Xcode project itself
@@ -251,8 +278,14 @@ stylus-ios/
                               the engine.connect format reconnect when
                               the new track has the same sample rate +
                               channel count as the previous one.
-        PlayQueue.swift       Ordered list + currentIndex; advance / goBack /
-                              jump / setQueue. Swift-side, not bridged.
+        PlayQueue.swift       Ordered list + currentIndex; advance /
+                              goBack / jump / setQueue. Also owns
+                              isShuffled + repeatMode state and the
+                              originalTracks snapshot needed for
+                              shuffleAll / unshuffle / advanceForAuto-
+                              Finish. Mirrors the desktop's PlayQueue
+                              shuffle/repeat behaviour byte-for-byte.
+                              Swift-side, not bridged.
         NowPlayingController.swift Bridges AudioPlayer state to
                               MPNowPlayingInfoCenter + registers
                               MPRemoteCommandCenter handlers. Lock-screen,

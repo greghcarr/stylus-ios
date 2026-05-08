@@ -346,10 +346,14 @@ final class AudioPlayer: ObservableObject
         // seek calls cancel the buffer and would otherwise spuriously fire
         // .dataPlayedBack with seekFrame ahead of where we paused.
         guard isPlaying else { return }
-        // Auto-advance: skip the user-switch fade-out (the track has
+        // advanceForAutoFinish encapsulates repeat-mode behaviour:
+        //   - repeatMode == .one: returns currentTrack (replay)
+        //   - repeatMode == .all: wraps to index 0 at end of queue
+        //   - repeatMode == .off: returns nil at end of queue (stop)
+        // Skip the user-switch fade-out either way (the track has
         // already played to its silent end, fading would just delay
         // the next track's start without any audible benefit).
-        if let next = queue?.advance()
+        if let next = queue?.advanceForAutoFinish()
         {
             play(next, fadeOutPrevious: false)
         }

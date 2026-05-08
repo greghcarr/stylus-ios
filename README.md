@@ -198,9 +198,22 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       full set; All Songs and Podcasts show only their relevant
       subset; Artists / Albums / Genres / Playlists / Search
       hide the overflow menu entirely.
-- [ ] **Phase 8** iPad NavigationSplitView, AirPlay, polish
-- [ ] **Phase 9** (desktop side) Cable + Wi-Fi sync engine via libimobiledevice
-- [ ] **Phase X** CarPlay - aspirational, gated on Apple's CarPlay Audio
-      entitlement (paid Developer Program + Apple approval). May never ship.
+- [x] **Phase 7d** Shuffle + repeat in the full-screen Now Playing
+      sheet's transport row. Layout matches the desktop:
+      `shuffle | prev | play | next | repeat`, with the smaller
+      shuffle / repeat glyphs flanking the three silver transport
+      discs. Shuffle saves the un-shuffled track order, moves the
+      playing track to index 0, then Fisher-Yates the rest;
+      un-shuffle restores the original order with the playing
+      track placed back at its original index. Repeat is a
+      three-state cycle (off / all / one): all wraps to index 0
+      at end of queue on auto-advance, one replays the current
+      track on natural track-end. Manual next / prev never wrap.
+      A fresh queue load (row-tap) resets shuffle to off.
+- [ ] **Phase 8** (desktop side) Cable + Wi-Fi sync engine via libimobiledevice
+- [ ] **Phase X** Aspirational, may-never-ship items:
+      iPad `NavigationSplitView` + AirPlay + general iPad polish; CarPlay
+      (gated on Apple's CarPlay Audio entitlement, paid Developer Program +
+      Apple approval).
 
 Full plan: [IOS_PORT_PLAN.md](External/stylus/IOS_PORT_PLAN.md).

@@ -494,12 +494,18 @@ struct NowPlayingSheet: View
     @ViewBuilder
     private var transport: some View
     {
-        // Same SilverCircleButtonStyle as the mini-player TransportBar
-        // for visual consistency with the app icon and the desktop's
-        // transport disc. Larger circle / glyph sizes here because the
-        // expanded sheet has the room to feel weighty.
-        HStack(spacing: 40)
+        // Five-button layout mirroring the desktop's transport row:
+        // shuffle | prev | play | next | repeat. Shuffle / repeat are
+        // smaller un-disced glyphs (matches the desktop's modBtnD = 28
+        // mod-button styling) tinted accent when active so the silver
+        // discs of the three real transport buttons stay the visual
+        // anchor of the row. Spacers expand to balance the row across
+        // the available width on iPhone SE through Pro Max.
+        HStack(spacing: 0)
         {
+            shuffleToggle
+            Spacer(minLength: 12)
+
             Button { audio.playPrev() }
             label:
             {
@@ -507,6 +513,8 @@ struct NowPlayingSheet: View
                     .font(.system(size: 26))
             }
             .buttonStyle(SilverCircleButtonStyle(size: 64))
+
+            Spacer(minLength: 16)
 
             Button { audio.togglePlayPause() }
             label:
@@ -520,6 +528,8 @@ struct NowPlayingSheet: View
             }
             .buttonStyle(SilverCircleButtonStyle(size: 84))
 
+            Spacer(minLength: 16)
+
             Button { audio.playNext() }
             label:
             {
@@ -529,12 +539,62 @@ struct NowPlayingSheet: View
             }
             .buttonStyle(SilverCircleButtonStyle(size: 64))
             .disabled(!queue.canAdvance)
+
+            Spacer(minLength: 12)
+            repeatToggle
         }
         // Negative top padding pulls the transport row 8 pt up
         // toward the scrubber, tightening the visual grouping of
         // "scrub + control" and putting more breathing room below
         // the buttons.
         .padding(.top, -8)
+    }
+
+    // Shuffle: simple SF Symbol toggle. Tint flips to accent when on
+    // (matches the desktop's "active = highlighted" mod-button
+    // treatment). 44 x 44 hit area satisfies the iOS minimum touch
+    // target while the glyph itself sits at 22 pt so the button
+    // doesn't visually compete with the silver discs.
+    @ViewBuilder
+    private var shuffleToggle: some View
+    {
+        Button
+        {
+            queue.setShuffled(!queue.isShuffled)
+        }
+        label:
+        {
+            Image(systemName: "shuffle")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(queue.isShuffled ? Color.accentColor
+                                                  : Color.secondary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Repeat: cycles off -> all -> one -> off. Mode "all" uses the
+    // plain repeat glyph in accent colour; mode "one" swaps to
+    // repeat.1 (the variant with the "1" indicator). Off uses the
+    // plain glyph in secondary.
+    @ViewBuilder
+    private var repeatToggle: some View
+    {
+        Button
+        {
+            queue.cycleRepeatMode()
+        }
+        label:
+        {
+            Image(systemName: queue.repeatMode == .one ? "repeat.1" : "repeat")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(queue.repeatMode == .off ? Color.secondary
+                                                          : Color.accentColor)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func format(_ seconds: TimeInterval) -> String
