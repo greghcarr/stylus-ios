@@ -63,6 +63,16 @@ struct RootView: View
                 // slide horizontally. Locking the frame keeps the
                 // tab content stationary across sheet presentations.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Block all interaction with the underlying tabs
+                // while the Now Playing sheet is presented. The
+                // sheet's rounded-corner cutouts at the top sit
+                // right where the navigation bar's back button is,
+                // so without this gate a tap into the corner falls
+                // through to the back button and pops the
+                // underlying stack while the sheet is open. The
+                // gate is released once the sheet snaps fully
+                // off-screen (sheetY = screenH).
+                .allowsHitTesting(sheetY >= screenH - 1)
 
             // NowPlayingSheet is rendered unconditionally and just
             // offset off-screen via sheetY when it shouldn't be

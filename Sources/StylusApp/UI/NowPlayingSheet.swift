@@ -77,14 +77,6 @@ struct NowPlayingSheet: View
             // 24 pt top-corner radius. The bar uses
             // .regularMaterial; the closest opaque equivalent for
             // a full-screen sheet is .secondarySystemBackground.
-            // Top-corner radii of 24 (matching TransportBar) make
-            // the sheet's top edge curve the same way as the bar's
-            // when the user drags the sheet down. .ignoresSafeArea
-            // extends the rectangle into all safe areas so the
-            // sheet still covers the full screen at rest -- the
-            // rounded corners sit beneath the status bar / dynamic
-            // island when fully expanded, and emerge from behind
-            // them as the user drags down.
             // .ignoresSafeArea(edges: .bottom) only -- the sheet's
             // top edge stays at the top safe-area inset (just below
             // the status bar / dynamic island), so the black
