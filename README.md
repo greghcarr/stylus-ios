@@ -7,14 +7,18 @@ audio player. Hybrid architecture: SwiftUI app shell over a C++ static library
 bridge in between.
 
 See [IOS_PORT_PLAN.md](External/stylus/IOS_PORT_PLAN.md) in the desktop submodule
-for the full architecture and phased delivery plan, and [CLAUDE.md](CLAUDE.md)
-for the iOS-specific architecture reference.
+for the full architecture and phased delivery plan. iOS-specific reference is
+split between [CLAUDE.md](CLAUDE.md) (a short index of conventions and topic
+links) and [docs/](docs/) (one file per topic: roadmap, build, files, bridge,
+audio, library, UI).
 
 ## Repo layout
 
 ```
 stylus-ios/
-  CLAUDE.md             iOS architecture / conventions reference
+  CLAUDE.md             Architecture index; one-line hooks per topic
+  docs/                 Topical reference: roadmap, build, files, bridge,
+                        audio, library, UI. See CLAUDE.md for the index.
   CMakeLists.txt        Builds StylusCore static lib (C++ core + ObjC++ bridge)
   Makefile              Convenience targets (regen, build, build-sim, clean)
   project.yml           XcodeGen config; StylusApp.xcodeproj is generated from this
