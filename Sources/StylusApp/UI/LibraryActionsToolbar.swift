@@ -249,6 +249,23 @@ private struct LibraryActionsButton: UIViewRepresentable
             completion(coord.buildMenu())
         }
         button.menu = UIMenu(title: "", children: [deferred])
+
+        // Static ellipsis.circle. Set ONCE at make-time. Doing this in
+        // updateUIView caused the toolbar to jitter horizontally while
+        // SwiftUI was re-rendering the parent (e.g. during the
+        // NowPlayingSheet present / dismiss animation): every body
+        // re-evaluation re-assigned button.configuration, which
+        // invalidated UIKit's intrinsic content size, briefly shrunk
+        // the trailing toolbar slot, and let the .principal-slot
+        // navigation title shift right to re-center -- visible to the
+        // user as "items in the menu behind the sheet shift slightly
+        // right then back left". Keeping the config stable keeps the
+        // button's intrinsic size stable across re-renders.
+        var config       = UIButton.Configuration.plain()
+        let symbolConfig = UIImage.SymbolConfiguration(textStyle: .body)
+        config.image     = UIImage(systemName:        "ellipsis.circle",
+                                   withConfiguration: symbolConfig)
+        button.configuration = config
         return button
     }
 
@@ -262,18 +279,6 @@ private struct LibraryActionsButton: UIViewRepresentable
         coord.onChangePodcastFolder = onChangePodcastFolder
         coord.onRemovePodcastFolder = onRemovePodcastFolder
         coord.onChoosePodcastFolder = onChoosePodcastFolder
-
-        // Static ellipsis.circle. Sized via the body text style so
-        // it matches sibling SwiftUI ProgressView() sizing in the
-        // same toolbar slot when the bar shows the scanning spinner.
-        var config           = UIButton.Configuration.plain()
-        let symbolConfig     = UIImage.SymbolConfiguration(
-                                   textStyle: .body)
-        config.image         = UIImage(
-            systemName:        "ellipsis.circle",
-            withConfiguration: symbolConfig
-        )
-        button.configuration = config
     }
 
     // Without this, SwiftUI passes the proposed size (the toolbar's

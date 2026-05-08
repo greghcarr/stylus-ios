@@ -54,11 +54,17 @@ struct RootView: View
         ZStack
         {
             tabsLayer
-                // Block taps on tabs once the sheet is more than half
-                // visible so its content captures the touches.
-                .allowsHitTesting(sheetY > screenH * 0.5)
+                // Pin the underlying tabs to fill the ZStack at all
+                // times. Without this, the ZStack sizes itself to
+                // max(child.intrinsicSize); inserting / removing
+                // NowPlayingSheet from the conditional below shifts
+                // the ZStack's frame by a pt or two, and tabsLayer
+                // (centered within the ZStack by default) appears to
+                // slide horizontally. Locking the frame keeps the
+                // tab content stationary across sheet presentations.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if audio.currentTrack != nil && sheetY < screenH
+            if audio.currentTrack != nil
             {
                 // No backdrop layer behind the sheet -- the
                 // tabsLayer (the active library / artists / etc.
@@ -68,12 +74,25 @@ struct RootView: View
                 // bar renders over whatever the underlying tab has
                 // there (its own background, navigation chrome,
                 // etc.).
+                //
+                // The condition is `currentTrack != nil` only --
+                // intentionally NOT `&& sheetY < screenH`. With the
+                // narrower condition, the sheet was inserted into
+                // the view tree at every present and removed at
+                // every dismiss, and SwiftUI rebuilt the whole
+                // ZStack on each transition. That insertion was
+                // resetting the underlying List's UIScrollView
+                // state and toggling the trailing scroll-indicator
+                // track in / out, visibly shifting list rows by
+                // ~3 pt during the animation. Keeping the sheet
+                // resident once a track is loaded -- and just
+                // animating its offset -- holds the underlying
+                // scroll views stable.
                 NowPlayingSheet(
                     sheetY:    $sheetY,
                     onDismiss: { dismissSheet() }
                 )
                 .offset(y: max(0, sheetY))
-                .zIndex(1)
             }
         }
         // Auto-present the Now Playing sheet whenever the app
