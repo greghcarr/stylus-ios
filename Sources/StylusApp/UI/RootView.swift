@@ -38,8 +38,6 @@ struct RootView: View
     // under the finger, no constant delta.
     @State private var safeTop: CGFloat = 0
 
-    @Environment(\.scenePhase) private var scenePhase
-
     // Lift threshold (pt of upward drag) past which a release commits
     // to fully-expanded. Below it, the sheet snaps back to the bar.
     private static let liftThreshold: CGFloat = 100
@@ -95,21 +93,15 @@ struct RootView: View
                 .offset(y: max(0, sheetY))
             }
         }
-        // Auto-present the Now Playing sheet whenever the app
-        // becomes active and a track is loaded. Covers the typical
-        // "user tapped the dynamic island / lock-screen controls
-        // and was sent to the app" flow. presentSheet() early-
-        // returns when the sheet is already up, so this is also
-        // safe to fire on .inactive → .active transitions (e.g.
-        // user pulled Control Center and dismissed it) -- the
-        // sheet stays where it was rather than re-animating.
-        .onChange(of: scenePhase)
-        { _, newPhase in
-            if newPhase == .active && audio.currentTrack != nil
-            {
-                presentSheet()
-            }
-        }
+        // No scenePhase auto-present: the sheet is only ever lifted
+        // by an explicit user gesture (tap the mini transport bar or
+        // drag it up). Earlier we auto-presented on every transition
+        // to .active so that lock-screen / dynamic-island taps would
+        // land the user in the full sheet, but iOS doesn't actually
+        // give us a "user tapped the now-playing widget" signal -- it
+        // looks identical to any other refocus -- so the heuristic
+        // ended up over-presenting (Control Center dismissals,
+        // returning from another app, etc.) and felt aggressive.
         // Custom env key (NOT .environmentObject) so consumers don't
         // subscribe to the router's @Published current. See the
         // explanation above the TabRouter declaration in

@@ -86,10 +86,12 @@ about JUCE; nothing below it knows about Swift / UIKit / SwiftUI.
   to it, finger-tracking via `.global` coordinate-space gestures.
   The full-screen sheet has a collapsing artwork header
   (`scaleEffect(anchor: .top)` + sticky offset, scroll position via
-  iOS 18's `.onScrollGeometryChange`). Auto-presents on
-  `scenePhase = .active` if a track is current, so dynamic-island /
-  lock-screen taps land users in the full sheet. Splash screen +
-  launch storyboard for a no-flash launch.
+  iOS 18's `.onScrollGeometryChange`). Splash screen + launch
+  storyboard for a no-flash launch. Sheet is presented only on
+  explicit user gesture (tap the mini transport bar or drag it up);
+  no scenePhase-based auto-present, since iOS doesn't expose a
+  signal that distinguishes "user tapped the now-playing widget"
+  from any other refocus.
 - Phase 6e (Genres tab + iTunes-style artist drilldown): done.
   New Genres tab on My Library, listing distinct non-empty genres
   with track counts; tapping a genre drills into its track list.
@@ -336,15 +338,18 @@ stylus-ios/
                               .styl-art.jpg sidecar.
       UI/
         RootView.swift        ZStack with the TabView (system tab bar
-                              hidden) and the NowPlayingSheet conditionally
-                              rendered on top. Owns sheetY (single source
-                              of truth for the sheet's vertical position --
-                              0 = fully expanded, screenH = at the
-                              TransportBar). Watches scenePhase to auto-
-                              present on .active. The TransportBar lives
-                              below the TabView in a VStack so the system
-                              tab bar (when visible) sits ABOVE the bar;
-                              currently the system tab bar is hidden via
+                              hidden) and the NowPlayingSheet rendered on
+                              top whenever a track is loaded. Owns sheetY
+                              (single source of truth for the sheet's
+                              vertical position -- 0 = fully expanded,
+                              screenH = at the TransportBar). The sheet
+                              is shown only by explicit gesture (tap the
+                              mini transport bar or drag it up); no
+                              scenePhase auto-present. The TransportBar
+                              lives below the TabView in a VStack so the
+                              system tab bar (when visible) sits ABOVE
+                              the bar; currently the system tab bar is
+                              hidden via
                               .toolbar(.hidden, for: .tabBar) on each tab.
         SplashView.swift      Initial app surface. Shows the rounded
                               SplashIcon centred on systemBackground for
@@ -621,8 +626,8 @@ stylus-ios/
                               inset and the system status bar renders
                               over the underlying tab. Auto-scrolls to
                               "npTop" on .onAppear so re-mounting the
-                              sheet (tap, drag-up, scenePhase auto-
-                              present) starts at the artwork.
+                              sheet (tap or drag-up) starts at the
+                              artwork.
         CircleSlider.swift    Circle-thumbed scrubber. DragGesture is
                               attached ONLY to the thumb itself (not the
                               track) so tapping somewhere on the bar
@@ -1009,15 +1014,20 @@ Launch sequence:
 still gets iOS's normal rounded mask; only `SplashIcon.png` has
 baked-in alpha rounding.
 
-### scenePhase auto-present
-`RootView` watches `@Environment(\.scenePhase)` and calls
-`presentSheet()` on every transition to `.active` if a track is
-loaded. `presentSheet()` early-returns when the sheet is already
-visible (`sheetY < screenH * 0.5`) so this is idempotent -- a
-brief Control-Center pull-down + dismiss is a no-op. The aggressive
-behaviour (no `wasInBackground` gate) means a dynamic-island /
-lock-screen tap that brings the user back to the app lands them
-directly on the full sheet, which is the desired UX.
+### Sheet presentation is gesture-only
+The Now Playing sheet is presented only by explicit user gesture --
+tapping the mini transport bar (`onTap` -> `presentSheet()`) or
+dragging it up. There is intentionally no scenePhase-based auto-
+present: an earlier version watched `@Environment(\.scenePhase)`
+and called `presentSheet()` on every transition to `.active`,
+hoping that lock-screen / dynamic-island taps would land users in
+the full sheet. iOS doesn't expose a signal that distinguishes
+"user tapped the now-playing widget" from any other refocus
+(Control Center dismissal, return from Apple Music, etc.), so the
+heuristic over-presented and felt aggressive. The trade-off is
+that a lock-screen widget tap now drops the user at the mini bar
+instead of the full sheet; from there they can tap the bar to
+expand if they want.
 
 ### Submodule update workflow
 The desktop submodule is pinned to a specific commit. It does not auto-update.
