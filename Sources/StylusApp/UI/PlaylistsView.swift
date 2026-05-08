@@ -69,15 +69,15 @@ struct PlaylistsView: View
                 playlists.movePlaylists(from: source, to: destination)
             }
 
-            // "New Playlist" action row sits BELOW the existing
+            // "Create Playlist" action row sits BELOW the existing
             // playlists -- iOS-Music style, where the create-action
             // is at the bottom of the list rather than competing
             // with the user's existing items at the top.
             //
             // When NO playlists exist this in-list row is hidden
             // and the empty-state overlay below presents its own
-            // New Playlist button right beneath the explanation
-            // text -- "Tap New Playlist below..." then the actual
+            // Create Playlist button right beneath the explanation
+            // text -- "Tap Create Playlist below..." then the actual
             // button, no scrolling required.
             if !playlists.playlists.isEmpty
             {
@@ -98,7 +98,7 @@ struct PlaylistsView: View
                             .font(.title3)
                             .foregroundStyle(.tint)
                             .frame(width: 44, height: 44)
-                        Text("New Playlist")
+                        Text("Create Playlist")
                         Spacer()
                     }
                 }
@@ -122,13 +122,13 @@ struct PlaylistsView: View
                 EmptyStateView(
                     title:       "No playlists",
                     systemImage: "list.bullet.rectangle",
-                    message:     "Tap New Playlist below to create one. Then long-press any track and choose Add to Playlist."
+                    message:     "Tap Create Playlist below to make one. Then long-press any track and choose Add to Playlist."
                 )
                 {
                     // The action button slot lives at the bottom
                     // of the empty-state stack, just below the
                     // explanation text -- so the user reads
-                    // "Tap New Playlist below..." and sees the
+                    // "Tap Create Playlist below..." and sees the
                     // button immediately underneath.
                     Button
                     {
@@ -137,17 +137,17 @@ struct PlaylistsView: View
                     }
                     label:
                     {
-                        Label("New Playlist", systemImage: "plus.circle.fill")
+                        Label("Create Playlist", systemImage: "plus.circle.fill")
                     }
                     .buttonStyle(.borderedProminent)
                     .padding(.top, 8)
                 }
             }
         }
-        // Native iOS new-playlist alert. Using .alert keeps the
+        // Native iOS create-playlist alert. Using .alert keeps the
         // text-input UX standard (system keyboard, Cancel / Create
         // buttons, escape-to-cancel) without us hand-rolling a sheet.
-        .alert("New Playlist", isPresented: $showCreateAlert)
+        .alert("Create Playlist", isPresented: $showCreateAlert)
         {
             TextField("Name", text: $newPlaylistName)
             Button("Create")
@@ -167,7 +167,7 @@ struct PlaylistsView: View
         }
         message:
         {
-            Text("Name your new playlist.")
+            Text("Name your playlist.")
         }
     }
 
@@ -476,7 +476,7 @@ struct PlaylistDetailView: View
 struct AddToPlaylistSheet: View
 {
     let tracks:        [Track]
-    // Pre-fill for the "New Playlist" name field, used so a long-
+    // Pre-fill for the "Create Playlist" name field, used so a long-
     // press on an album / artist / genre / podcast / playlist row
     // suggests that group's name as the playlist title. Empty
     // string means no suggestion (the field opens blank, as it
@@ -528,7 +528,7 @@ struct AddToPlaylistSheet: View
                     .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                 }
 
-                // "New Playlist" sits at the bottom of the list,
+                // "Create Playlist" sits at the bottom of the list,
                 // matching the Playlists tab itself -- the create-
                 // action goes BELOW the user's existing playlists
                 // rather than competing with them at the top.
@@ -552,7 +552,7 @@ struct AddToPlaylistSheet: View
                             .font(.title3)
                             .foregroundStyle(.tint)
                             .frame(width: 24)
-                        Text("New Playlist")
+                        Text("Create Playlist")
                             .foregroundStyle(.primary)
                         Spacer()
                     }
@@ -570,7 +570,7 @@ struct AddToPlaylistSheet: View
                     Button("Cancel") { dismiss() }
                 }
             }
-            .alert("New Playlist", isPresented: $showCreateAlert)
+            .alert("Create Playlist", isPresented: $showCreateAlert)
             {
                 TextField("Name", text: $newPlaylistName)
                 Button("Create")
@@ -632,9 +632,9 @@ struct AddToPlaylistSheet: View
         switch tracks.count
         {
         case 1:
-            return "Name your new playlist; this track will be added."
+            return "Name your playlist; this track will be added."
         default:
-            return "Name your new playlist; these \(tracks.count) tracks will be added."
+            return "Name your playlist; these \(tracks.count) tracks will be added."
         }
     }
 }

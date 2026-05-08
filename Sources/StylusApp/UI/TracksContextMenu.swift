@@ -40,7 +40,7 @@ extension View
 // `tracksFor` is called lazily when a menu item is tapped so any
 // expensive filtering / sorting only runs at action time.
 //
-// `suggestedName` provides a default value for the New Playlist
+// `suggestedName` provides a default value for the Create Playlist
 // alert's name field.
 //
 // `previewContent` is the row's content rendered fresh for the
