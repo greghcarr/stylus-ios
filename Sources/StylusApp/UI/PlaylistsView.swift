@@ -69,48 +69,40 @@ struct PlaylistsView: View
                 playlists.movePlaylists(from: source, to: destination)
             }
 
-            // "Create Playlist" action row sits BELOW the existing
-            // playlists -- iOS-Music style, where the create-action
-            // is at the bottom of the list rather than competing
-            // with the user's existing items at the top.
-            //
-            // When NO playlists exist this in-list row is hidden
-            // and the empty-state overlay below presents its own
-            // Create Playlist button right beneath the explanation
-            // text -- "Tap Create Playlist below..." then the actual
-            // button, no scrolling required.
-            if !playlists.playlists.isEmpty
-            {
-                Button
-                {
-                    newPlaylistName = ""
-                    showCreateAlert = true
-                }
-                label:
-                {
-                    HStack(spacing: 12)
-                    {
-                        // .tint (blue) reads as a primary "create"
-                        // action; 44 pt frame matches the playlist
-                        // rows above. Text stays primary-coloured
-                        // via RowTapButtonStyle.
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.tint)
-                            .frame(width: 44, height: 44)
-                        Text("Create Playlist")
-                        Spacer()
-                    }
-                }
-                .buttonStyle(RowTapButtonStyle())
-                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-            }
-
             TransportBarBottomSpacer()
         }
         .listStyle(.plain)
         .listSectionSeparator(.hidden)
         .tabTitleMenu("Playlists")
+        // Trailing overflow menu. Single entry today (Create Playlist);
+        // future per-tab actions go here too. SwiftUI Menu rather than
+        // the UIDeferredMenuElement-backed UIButton other tabs use,
+        // because PlaylistsView doesn't see the high-frequency parent
+        // re-renders during library scan that motivated the UIKit
+        // workaround there.
+        .toolbar
+        {
+            ToolbarItem(placement: .topBarTrailing)
+            {
+                Menu
+                {
+                    Button
+                    {
+                        newPlaylistName = ""
+                        showCreateAlert = true
+                    }
+                    label:
+                    {
+                        Label("Create Playlist",
+                              systemImage: "plus.circle.fill")
+                    }
+                }
+                label:
+                {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
         .navigationDestination(for: PlaylistKey.self)
         { key in
             PlaylistDetailView(playlistId: key.id)
@@ -122,26 +114,8 @@ struct PlaylistsView: View
                 EmptyStateView(
                     title:       "No playlists",
                     systemImage: "list.bullet.rectangle",
-                    message:     "Tap Create Playlist below to make one. Then long-press any track and choose Add to Playlist."
+                    message:     "Tap the menu in the upper-right and choose Create Playlist. Then long-press any track and choose Add to Playlist."
                 )
-                {
-                    // The action button slot lives at the bottom
-                    // of the empty-state stack, just below the
-                    // explanation text -- so the user reads
-                    // "Tap Create Playlist below..." and sees the
-                    // button immediately underneath.
-                    Button
-                    {
-                        newPlaylistName = ""
-                        showCreateAlert = true
-                    }
-                    label:
-                    {
-                        Label("Create Playlist", systemImage: "plus.circle.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 8)
-                }
             }
         }
         // Native iOS create-playlist alert. Using .alert keeps the
