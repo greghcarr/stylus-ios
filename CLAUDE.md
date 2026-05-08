@@ -744,6 +744,15 @@ frame so `lastRenderTime` resets and the offset arithmetic stays right.
 Pause keeps the buffer scheduled, so `node.play()` resumes seamlessly
 without rescheduling.
 
+`pause()` and `resume()` each call `tickCurrentTime()` at the
+transition boundary so `currentTime` reflects the renderer's actual
+sample position before the change fires `onPlaybackStateChanged`.
+Without this, the timer's last (up to 0.25 s stale) sample is what
+NowPlayingController publishes to `MPNowPlayingInfoCenter`, and the
+lock-screen seek bar drifts behind real playback by up to a tick
+on every pause -- compounding into visible misalignment between the
+in-app and lock-screen scrubbers.
+
 ### Now Playing center + remote commands
 [NowPlayingController.swift](Sources/StylusApp/Audio/NowPlayingController.swift)
 is constructed once in [StylusApp.swift](Sources/StylusApp/StylusApp.swift)

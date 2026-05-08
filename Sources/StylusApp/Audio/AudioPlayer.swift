@@ -217,6 +217,14 @@ final class AudioPlayer: ObservableObject
     func pause()
     {
         guard isPlaying else { return }
+        // Refresh currentTime from the renderer's actual sample position
+        // BEFORE flipping isPlaying / pausing the node, so the lock screen
+        // and Control Center receive the true paused offset rather than
+        // the 0.25 s timer's last (potentially stale) value. Without this,
+        // MPNowPlayingInfoCenter's elapsed lags reality by up to a tick
+        // and on resume the system extrapolates forward from the stale
+        // point while the audio plays from the real point -- they drift.
+        tickCurrentTime()
         node.pause()
         isPlaying = false
         stopTimer()
@@ -229,6 +237,13 @@ final class AudioPlayer: ObservableObject
         if !engine.isRunning { try? engine.start() }
         node.play()
         isPlaying = true
+        // Same boundary capture as pause(): the node's playerTime stays
+        // valid across pause, so the first tick post-resume returns the
+        // paused position (= where playback will actually resume from).
+        // Pushing this fresh value to MPNowPlayingInfoCenter before the
+        // timer's first tick lands keeps the lock screen aligned with
+        // the audio from the very first sample of the resume.
+        tickCurrentTime()
         startTimer()
         onPlaybackStateChanged?()
     }
