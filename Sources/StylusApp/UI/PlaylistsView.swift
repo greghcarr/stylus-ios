@@ -247,10 +247,14 @@ struct PlaylistDetailView: View
         {
             // Trailing: Edit (drag-to-reorder tracks). Removal
             // happens via the long-press contextMenu's "Remove from
-            // Playlist" item -- swipe-to-delete was removed because
-            // outside-table taps didn't dismiss the revealed
-            // trash button (standard UIKit behaviour, but felt
-            // broken to the user).
+            // Playlist" item. We tried adding an Edit-mode trash
+            // button on each row and it caused UITableView's
+            // reorder-drag session to hang -- the row's outer view
+            // type changed (Button -> HStack) when entering edit
+            // mode, which broke UIKit's drag tracking and left the
+            // dragged row's preview floating on top of the OS
+            // shell after the app was closed. Reverted to a single
+            // outer Button structure for stable cell identity.
             ToolbarItem(placement: .topBarTrailing)
             {
                 EditButton()

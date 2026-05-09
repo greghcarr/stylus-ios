@@ -28,59 +28,10 @@ struct TrackRowButton: View
     @EnvironmentObject var lookup:    LookupController
     @EnvironmentObject var playlists: PlaylistStore
 
-    @Environment(\.editMode) private var editMode
-
     @State private var showEdit          = false
     @State private var showAddToPlaylist = false
 
-    private var isEditing: Bool
-    {
-        editMode?.wrappedValue.isEditing == true
-    }
-
     var body: some View
-    {
-        if isEditing, let onRemove = onRemoveFromPlaylist
-        {
-            editingRow(onRemove: onRemove)
-        }
-        else
-        {
-            normalRow
-        }
-    }
-
-    // Edit mode: leading red trash button (single-tap remove) + the
-    // standard row content. No outer Button wrapper, so tapping the
-    // row's body does nothing (playback only fires in normal mode).
-    // No contextMenu either -- edit mode's primary affordances are
-    // remove (trash) and reorder (system-rendered trailing handle
-    // because PlaylistDetailView attaches .onMove).
-    private func editingRow(onRemove: @escaping () -> Void) -> some View
-    {
-        HStack(spacing: 12)
-        {
-            Button
-            {
-                onRemove()
-            }
-            label:
-            {
-                Image(systemName: "trash.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.red)
-            }
-            .buttonStyle(.plain)
-
-            TrackRow(track:            track,
-                     isPlaying:        audio.currentTrack?.filePath == track.filePath,
-                     titleOverride:    titleOverride,
-                     subtitleOverride: subtitleOverride)
-        }
-        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-    }
-
-    private var normalRow: some View
     {
         Button
         {
