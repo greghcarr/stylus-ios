@@ -66,10 +66,6 @@ struct PlaylistsView: View
                     }
                 )
             }
-            .onDelete
-            { offsets in
-                playlists.deletePlaylists(at: offsets)
-            }
             .onMove
             { source, destination in
                 playlists.movePlaylists(from: source, to: destination)
@@ -249,7 +245,12 @@ struct PlaylistDetailView: View
         .navigationBarTitleDisplayMode(.inline)
         .toolbar
         {
-            // Trailing: Edit (drag-to-reorder + swipe-to-delete tracks).
+            // Trailing: Edit (drag-to-reorder tracks). Removal
+            // happens via the long-press contextMenu's "Remove from
+            // Playlist" item -- swipe-to-delete was removed because
+            // outside-table taps didn't dismiss the revealed
+            // trash button (standard UIKit behaviour, but felt
+            // broken to the user).
             ToolbarItem(placement: .topBarTrailing)
             {
                 EditButton()
@@ -322,14 +323,18 @@ struct PlaylistDetailView: View
         {
             ForEach(Array(entries.enumerated()), id: \.element.track.id)
             { (rowIndex, entry) in
-                TrackRowButton(track: entry.track, visibleTracks: visibleTracks)
-                    .hideFirstRowSeparator(rowIndex == 0)
-            }
-            .onDelete
-            { offsets in
-                let storedIndices = offsets.map { entries[$0].originalIndex }
-                playlists.removeTrackPaths(at: IndexSet(storedIndices),
-                                           from: playlist.id)
+                TrackRowButton(
+                    track:         entry.track,
+                    visibleTracks: visibleTracks,
+                    onRemoveFromPlaylist:
+                    {
+                        playlists.removeTrackPaths(
+                            at:   IndexSet([entry.originalIndex]),
+                            from: playlist.id
+                        )
+                    }
+                )
+                .hideFirstRowSeparator(rowIndex == 0)
             }
             .onMove
             { source, destination in

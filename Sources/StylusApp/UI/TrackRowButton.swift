@@ -13,16 +13,74 @@ struct TrackRowButton: View
     // the standard "Title" + "artist - album" pair.
     var titleOverride:    String? = nil
     var subtitleOverride: String? = nil
+    // Non-nil when the row is being rendered inside a playlist's
+    // detail view. Tapping the menu item invokes this closure to
+    // remove the row from that specific playlist. This is the only
+    // path to remove a track from a playlist; we removed the iOS
+    // swipe-to-delete affordance on the List because tapping outside
+    // the table view (nav bar, transport bar) didn't dismiss the
+    // revealed trash button -- felt broken even though it's the
+    // standard UIKit behaviour.
+    var onRemoveFromPlaylist: (() -> Void)? = nil
 
     @EnvironmentObject var queue:     PlayQueue
     @EnvironmentObject var audio:     AudioPlayer
     @EnvironmentObject var lookup:    LookupController
     @EnvironmentObject var playlists: PlaylistStore
 
+    @Environment(\.editMode) private var editMode
+
     @State private var showEdit          = false
     @State private var showAddToPlaylist = false
 
+    private var isEditing: Bool
+    {
+        editMode?.wrappedValue.isEditing == true
+    }
+
     var body: some View
+    {
+        if isEditing, let onRemove = onRemoveFromPlaylist
+        {
+            editingRow(onRemove: onRemove)
+        }
+        else
+        {
+            normalRow
+        }
+    }
+
+    // Edit mode: leading red trash button (single-tap remove) + the
+    // standard row content. No outer Button wrapper, so tapping the
+    // row's body does nothing (playback only fires in normal mode).
+    // No contextMenu either -- edit mode's primary affordances are
+    // remove (trash) and reorder (system-rendered trailing handle
+    // because PlaylistDetailView attaches .onMove).
+    private func editingRow(onRemove: @escaping () -> Void) -> some View
+    {
+        HStack(spacing: 12)
+        {
+            Button
+            {
+                onRemove()
+            }
+            label:
+            {
+                Image(systemName: "trash.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.red)
+            }
+            .buttonStyle(.plain)
+
+            TrackRow(track:            track,
+                     isPlaying:        audio.currentTrack?.filePath == track.filePath,
+                     titleOverride:    titleOverride,
+                     subtitleOverride: subtitleOverride)
+        }
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+    }
+
+    private var normalRow: some View
     {
         Button
         {
@@ -103,6 +161,21 @@ struct TrackRowButton: View
             label:
             {
                 Label("Edit Info\u{2026}", systemImage: "info.circle")
+            }
+
+            if let onRemove = onRemoveFromPlaylist
+            {
+                Divider()
+
+                Button(role: .destructive)
+                {
+                    onRemove()
+                }
+                label:
+                {
+                    Label("Remove from Playlist",
+                          systemImage: "minus.circle")
+                }
             }
         }
         // Custom preview view. Without this the system snapshots

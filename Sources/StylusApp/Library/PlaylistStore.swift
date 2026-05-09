@@ -53,12 +53,6 @@ final class PlaylistStore: ObservableObject
         save()
     }
 
-    func deletePlaylists(at offsets: IndexSet)
-    {
-        playlists.remove(atOffsets: offsets)
-        save()
-    }
-
     func deletePlaylist(id: Int)
     {
         playlists.removeAll { $0.id == id }
