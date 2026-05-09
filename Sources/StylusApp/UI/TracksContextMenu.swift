@@ -54,6 +54,23 @@ extension View
 // keeping it a plain Rectangle means the anticipation looks like
 // the row itself rather than a separate rounded inset rectangle
 // appearing inside the row. Same fix TrackRowButton uses.
+
+// Bundles the data the AddToPlaylist sheet needs alongside the
+// presentation trigger. Using `.sheet(item:)` with this single
+// Identifiable instead of separate @State vars + `.sheet(isPresented:)`
+// avoids a race during contextMenu dismissal: the sheet was sometimes
+// presenting before three back-to-back @State writes (pendingTracks,
+// pendingName, showAddToPlaylist) had all landed, leaving the sheet
+// holding an empty tracks array. User symptom was "Add to Playlist"
+// from a group row succeeding visually but the playlist staying
+// empty -- addTracks([]) is a no-op.
+private struct AddToPlaylistRequest: Identifiable
+{
+    let id = UUID()
+    let tracks:        [Track]
+    let suggestedName: String
+}
+
 private struct TracksContextMenu<Preview: View, Extra: View>: ViewModifier
 {
     let suggestedName:    () -> String
@@ -63,9 +80,7 @@ private struct TracksContextMenu<Preview: View, Extra: View>: ViewModifier
 
     @EnvironmentObject var queue: PlayQueue
 
-    @State private var showAddToPlaylist: Bool    = false
-    @State private var pendingTracks:     [Track] = []
-    @State private var pendingName:       String  = ""
+    @State private var addToPlaylistRequest: AddToPlaylistRequest? = nil
 
     func body(content: Content) -> some View
     {
@@ -93,9 +108,10 @@ private struct TracksContextMenu<Preview: View, Extra: View>: ViewModifier
 
                 Button
                 {
-                    pendingTracks     = tracksFor()
-                    pendingName       = suggestedName()
-                    showAddToPlaylist = true
+                    addToPlaylistRequest = AddToPlaylistRequest(
+                        tracks:        tracksFor(),
+                        suggestedName: suggestedName()
+                    )
                 }
                 label:
                 {
@@ -112,10 +128,10 @@ private struct TracksContextMenu<Preview: View, Extra: View>: ViewModifier
                     .padding(.vertical, 12)
                     .frame(maxWidth: 360)
             }
-            .sheet(isPresented: $showAddToPlaylist)
-            {
-                AddToPlaylistSheet(tracks:        pendingTracks,
-                                   suggestedName: pendingName)
+            .sheet(item: $addToPlaylistRequest)
+            { request in
+                AddToPlaylistSheet(tracks:        request.tracks,
+                                   suggestedName: request.suggestedName)
             }
     }
 }
