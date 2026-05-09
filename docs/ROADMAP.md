@@ -150,7 +150,7 @@ level status section.
   rows, and playlist rows. Each call site provides a tracksFor
   closure (lazily evaluated at action time, ordered the way the
   matching detail view orders its tracks) and a suggestedName
-  closure that pre-fills the New Playlist alert with the
+  closure that pre-fills the Create Playlist alert with the
   group's natural name (album title, artist, etc.). Playlist-
   row variant uses an additionalItems trailing closure to add
   a destructive "Delete Playlist" entry below the standard

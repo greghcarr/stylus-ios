@@ -229,7 +229,7 @@ stylus-ios/
                               trackPaths array so orphans stay put.
                               AddToPlaylistSheet takes [Track] (with
                               a single-Track convenience init) and a
-                              suggestedName for the New Playlist
+                              suggestedName for the Create Playlist
                               prefill.
         TracksContextMenu.swift
                               .tracksContextMenu(suggestedName:

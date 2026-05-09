@@ -143,7 +143,7 @@ drive). `MusicFolderStore` runs `URL.bookmarkData()` after the
 `fileImporter` callback and stores the bytes in `UserDefaults`. On launch
 it resolves the bookmark and calls `startAccessingSecurityScopedResource()`
 once; the scope stays active for the app lifetime so the C++ scanner and
-`AVAudioPlayer` can read by POSIX path without per-call scoping.
+`AVAudioEngine` can read by POSIX path without per-call scoping.
 
 ### Cache-then-scan flow
 Two-step on every launch:

@@ -165,10 +165,10 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       state drives a finger-tracking expand-from-bar / dismiss flow,
       with a collapsing artwork header (full-size at scroll-top,
       shrunk to ¼ pinned at the visible top through the collapse
-      range, then continues scrolling normally). Auto-presents on
-      `scenePhase = .active` so dynamic-island / lock-screen taps
-      land users on the full sheet immediately. Splash screen +
-      launch storyboard for a no-flash launch.
+      range, then continues scrolling normally). Sheet is presented
+      only on explicit user gesture (tap the mini transport bar or
+      drag it up); no scenePhase-based auto-present. Splash screen
+      + launch storyboard for a no-flash launch.
 - [x] **Phase 6e** Genres tab + iTunes-style artist drilldown. New
       `GenresView` lists distinct non-empty genres with track counts.
       `ArtistDetailView` branches on the artist's distinct-album
@@ -181,12 +181,15 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       to 0 over 20 ms on user-initiated switches (eliminates the
       mid-amplitude cutoff click on abrupt skip).
 - [x] **Phase 6g** Row tap feedback + context menu polish. Custom
-      `RowTapButtonStyle` provides scale + opacity dim + light
-      haptic on row press across the app. Long-press contextMenu
-      uses `.contentShape(.contextMenuPreview, RoundedRectangle)` +
-      a custom `preview:` view at `frame(maxWidth: 360)` for
-      consistent rounded-preview sizing in portrait that shrinks
-      gracefully in landscape.
+      `RowTapButtonStyle` provides haptic-only feedback on row
+      press; the original scale + opacity ramp was removed because
+      it manifested as a redundant pre-stage of the long-press
+      contextMenu animation. Long-press contextMenu uses
+      `.contentShape(.contextMenuPreview, Rectangle())` so the
+      anticipation phase matches the row's natural square shape;
+      a custom `preview:` view at `frame(maxWidth: 360)` keeps
+      sizing consistent in portrait and shrinks gracefully in
+      landscape.
 - [x] **Phase 7a** Playlists: create / rename / delete /
       drag-and-drop reorder. PlaylistStore persists to JSON
       matching the desktop's `Stylus::Playlist` schema for future
@@ -196,7 +199,7 @@ A `+` prefix means the submodule has uncommitted changes vs. the pin; a
       album / artist / genre / podcast / playlist row exposes
       Play Next / Add to Queue / Add to Playlist... operating on
       every track in that group. Reusable `TracksContextMenu`
-      modifier; `AddToPlaylistSheet` pre-fills the New Playlist
+      modifier; `AddToPlaylistSheet` pre-fills the Create Playlist
       name with the row's contextual title.
 - [x] **Phase 7c** Per-tab overflow menu scoping. Home shows the
       full set; All Songs and Podcasts show only their relevant
