@@ -140,7 +140,11 @@ struct TransportBar: View
         Capsule()
             .fill(isHandleGrabbed ? Color.white
                                   : Color.secondary.opacity(0.55))
-            .frame(width: 36, height: 4)
+            // Matches the big sheet's drag-handle dimensions (88 x 5)
+            // so a user transitioning between the mini bar and the
+            // expanded sheet sees the same affordance, not two
+            // differently-shaped capsules.
+            .frame(width: 88, height: 5)
             .padding(.top, 14)
             // Generous transparent hit area so the small capsule is
             // actually grabbable. minHeight 24 + maxWidth .infinity
