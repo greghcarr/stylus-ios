@@ -33,6 +33,13 @@ struct NowPlayingSheet: View
     // session-scoped (not persisted).
     @State private var suggestedTracks:  [Track]      = []
     @State private var passedTrackPaths: Set<String>  = []
+    // Drives the entire Suggested Tracks section's opacity (title +
+    // list together). On "+", the user wants the section to fade
+    // out, the queue mutation + layout shift to happen invisibly,
+    // and the section to fade back in at its new position with the
+    // new track already in the slot. Default 1 so the section is
+    // visible at rest.
+    @State private var suggestionsSectionOpacity: Double = 1
     // True while the user is actively gripping the drag handle at
     // the top of the sheet (NOT while they're dragging the artwork
     // region, which uses dismissDrag and leaves this alone). Drives
@@ -488,7 +495,16 @@ struct NowPlayingSheet: View
                     .padding(.horizontal, 4)
                     .padding(.top, 8)
 
-                LazyVStack(spacing: 0)
+                // Plain VStack (not LazyVStack): with at most 5 rows
+                // there's no virtualisation benefit, and LazyVStack's
+                // child positioning during a .transition(.opacity)
+                // cross-fade briefly placed both old and new rows
+                // sequentially in the layout, expanding the section
+                // for ~0.4 s and pushing the rows below into space
+                // overlapping the header above. Plain VStack
+                // co-locates the cross-faded rows at the same slot,
+                // keeping the section's height stable.
+                VStack(spacing: 0)
                 {
                     ForEach(Array(suggestedTracks.enumerated()), id: \.element.id)
                     { (offset, track) in
@@ -496,43 +512,19 @@ struct NowPlayingSheet: View
                             track:  track,
                             onAdd:
                             {
-                                addSuggestionToQueue(track)
-                                // Up Next just grew by one row, which
-                                // pushes Suggested Tracks down inside
-                                // the scroll content. Scroll to the
-                                // sentinel at the very bottom of the
-                                // scroll content so the user stays
-                                // anchored to the bottom of the sheet.
-                                //
-                                // Delayed deliberately so the cross-
-                                // fade has visibly started before the
-                                // scroll begins. Running both on the
-                                // same runloop made the scroll move
-                                // content upward simultaneously with
-                                // the fade, which read as the list
-                                // "competing with the Suggested
-                                // Tracks header" -- rows passing
-                                // through the header's vertical space
-                                // mid-fade.
-                                DispatchQueue.main
-                                    .asyncAfter(deadline: .now() + 0.18)
-                                {
-                                    withAnimation(
-                                        .easeInOut(duration: 0.4)
-                                    )
-                                    {
-                                        scrollProxy.scrollTo(
-                                            "scrollBottom",
-                                            anchor: .bottom
-                                        )
-                                    }
-                                }
+                                fadeAndAddSuggestion(
+                                    track:        track,
+                                    scrollProxy:  scrollProxy
+                                )
                             },
                             onPass: { passSuggestion(track) }
                         )
-                        // Opacity-only transition so the inserted row
-                        // doesn't briefly take an extra layout slot
-                        // while the outgoing row is still in place.
+                        // Opacity-only transition so the cross-fade
+                        // pass animation lands in place rather than
+                        // sliding the new row in from a layout slot
+                        // shift. "+" doesn't rely on this transition
+                        // (it fades the whole section at once via
+                        // suggestionsSectionOpacity).
                         .transition(.opacity)
 
                         if offset < suggestedTracks.count - 1
@@ -541,19 +533,85 @@ struct NowPlayingSheet: View
                         }
                     }
                 }
-                // One animation modifier for the whole list. Any
-                // mutation of suggestedTracks (local splice from "+",
-                // pass, or .onChange recompute) animates uniformly
-                // as a single transaction, so rows shift in lock-
-                // step instead of segmenting across multiple
-                // implicit / explicit animation boundaries. 0.4 s
-                // gives the cross-fade enough room to read as a
-                // deliberate transition rather than a flicker.
-                .animation(.easeInOut(duration: 0.4),
-                           value: suggestedTracks)
+            }
+            // Section-level opacity drives the "+" fade-out + fade-
+            // in. 1 at rest; "+" animates 1 -> 0, mutates queue +
+            // suggestions while invisible, snaps the scroll, then
+            // animates 0 -> 1 back.
+            //
+            // .animation bound specifically to suggestionsSection-
+            // Opacity (NOT the broader view) so that only opacity
+            // changes animate. The queue mutation that happens
+            // during the invisible window also re-renders the row
+            // (new artwork @State for the freshly-identitied row,
+            // Up Next pushing the section down, scrollTo snapping
+            // the viewport): if any of those got swept into the
+            // same animation transaction as the opacity, the user
+            // saw the row contents "slide up into place" during
+            // fade-in. Scoping the animation to opacity only lets
+            // those layout / state changes resolve instantly while
+            // invisible, and the only thing the user sees is a
+            // clean alpha ramp.
+            //
+            // Pass leaves this at 1 and uses the row's
+            // .transition(.opacity) under withAnimation in
+            // passSuggestion for an in-place cross-fade.
+            .opacity(suggestionsSectionOpacity)
+            .animation(.easeInOut(duration: Self.suggestionsFadeDuration),
+                       value: suggestionsSectionOpacity)
+        }
+    }
+
+    // "+" tap flow: fade the whole section to 0, mutate during the
+    // invisible window (queue grows -> Up Next pushes the section
+    // down; replaceSuggestion swaps the tapped row for a fresh
+    // pick), snap-scroll the sheet to its new bottom so the
+    // section is back in view, and fade to 1.
+    //
+    // No withAnimation anywhere here: the section's
+    // .animation(_:value: suggestionsSectionOpacity) modifier picks
+    // up the opacity changes and animates JUST those. Mutations
+    // run synchronously (no animation), and the scroll + final
+    // opacity flip are deferred to subsequent runloops so they
+    // can't be coalesced into the fade-out's animation transaction
+    // (which made row contents appear to slide up into place
+    // during fade-in).
+    private func fadeAndAddSuggestion(
+        track:       Track,
+        scrollProxy: ScrollViewProxy
+    )
+    {
+        suggestionsSectionOpacity = 0
+        DispatchQueue.main
+            .asyncAfter(deadline: .now() + Self.suggestionsFadeDuration)
+        {
+            // Mutation + scroll snap in the same runloop so SwiftUI
+            // batches them into one render. Without batching, the
+            // user briefly saw the just-appended track flash at the
+            // bottom of Up Next before the scroll caught up -- Up
+            // Next itself stays visible during the section fade
+            // (only the suggestions section is at opacity 0), so any
+            // intermediate frame where queue grew but scroll hadn't
+            // applied was visible. Same-runloop batching skips that
+            // frame entirely.
+            queue.append([track])
+            replaceSuggestion(at: track)
+            scrollProxy.scrollTo("scrollBottom", anchor: .bottom)
+            // Defer the fade-in flip to the next runloop so the
+            // .animation(_:value: suggestionsSectionOpacity)
+            // modifier sees a transaction whose ONLY change is the
+            // opacity. Co-locating it with queue / scroll changes
+            // would let those get coalesced into the fade-in
+            // animation, which read as row contents sliding up
+            // into place during the alpha ramp.
+            DispatchQueue.main.async
+            {
+                suggestionsSectionOpacity = 1
             }
         }
     }
+
+    private static let suggestionsFadeDuration: TimeInterval = 0.2
 
     // Pool of library music tracks not in the queue, not already
     // suggested, and not previously passed in this session.
@@ -705,21 +763,18 @@ struct NowPlayingSheet: View
         }
     }
 
-    private func addSuggestionToQueue(_ track: Track)
-    {
-        // Plain mutations -- the LazyVStack's
-        // .animation(_:value: suggestedTracks) modifier picks up the
-        // change and cross-fades the row in place. Wrapping in
-        // withAnimation here would spawn a competing animation
-        // transaction, which read as "segmented" row movement.
-        queue.append([track])
-        replaceSuggestion(at: track)
-    }
-
+    // Pass uses an in-place row cross-fade via the row's
+    // .transition(.opacity); the explicit withAnimation here is
+    // what gives the transition its animation context (the section
+    // no longer has an .animation(_:value:) modifier -- "+" handles
+    // its own animation through suggestionsSectionOpacity).
     private func passSuggestion(_ track: Track)
     {
-        passedTrackPaths.insert(track.filePath)
-        replaceSuggestion(at: track)
+        withAnimation(.easeInOut(duration: 0.4))
+        {
+            passedTrackPaths.insert(track.filePath)
+            replaceSuggestion(at: track)
+        }
     }
 
     @ViewBuilder
@@ -991,8 +1046,14 @@ private struct SuggestedTrackRow: View
 
     var body: some View
     {
+        // Layout matches the playlist edit-mode row pattern: a single
+        // destructive button at the leading edge, content in the
+        // middle, and the additive action at the trailing edge.
+        // Mirrors trash-on-left / plus-on-right symmetry the user
+        // asked for after seeing the playlist Edit-mode trash icon.
         HStack(spacing: 12)
         {
+            passButton
             thumb
             VStack(alignment: .leading, spacing: 2)
             {
@@ -1008,11 +1069,7 @@ private struct SuggestedTrackRow: View
                 }
             }
             Spacer()
-            HStack(spacing: 8)
-            {
-                addButton
-                passButton
-            }
+            addButton
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 8)
