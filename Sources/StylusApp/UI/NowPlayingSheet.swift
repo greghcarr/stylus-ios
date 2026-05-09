@@ -13,14 +13,26 @@ struct NowPlayingSheet: View
     // both directions. The sheet's vertical .offset is applied by
     // RootView from this binding, NOT here.
     @Binding var sheetY:    CGFloat
+    // Top-most sheetY value (sheet's fully-expanded position).
+    // Drag handlers clamp here so the user can't pull the sheet
+    // higher than its expanded position. RootView passes this
+    // explicitly so both views agree on where "fully expanded" is.
+    var       minSheetY:    CGFloat   = 0
     var       onDismiss:    () -> Void = {}
 
-    @EnvironmentObject var audio: AudioPlayer
-    @EnvironmentObject var queue: PlayQueue
+    @EnvironmentObject var audio:   AudioPlayer
+    @EnvironmentObject var queue:   PlayQueue
+    @EnvironmentObject var library: LibraryStore
 
     @State private var artwork:         UIImage?
     @State private var sliderValue:     Double = 0
     @State private var userIsScrubbing: Bool   = false
+    // Suggested Tracks section state. Up to 5 tracks from the
+    // library that share artist or genre with the current queue.
+    // Replenished on tap-to-add and swipe-to-pass; passes are
+    // session-scoped (not persisted).
+    @State private var suggestedTracks:  [Track]      = []
+    @State private var passedTrackPaths: Set<String>  = []
     // True while the user is actively gripping the drag handle at
     // the top of the sheet (NOT while they're dragging the artwork
     // region, which uses dismissDrag and leaves this alone). Drives
@@ -139,6 +151,22 @@ struct NowPlayingSheet: View
         .task
         {
             sliderValue = audio.currentTime
+            recomputeSuggestions()
+        }
+        // Re-rank the Suggested Tracks list whenever the playback
+        // context changes. Watching currentTrack.filePath catches
+        // skip / advance / row-tap; watching queue.tracks.count
+        // catches "Add to Queue" from elsewhere in the app without
+        // a track change. Both triggers do a full recompute, which
+        // also drops any passes that no longer apply (the same
+        // candidate pool reseeds the section).
+        .onChange(of: audio.currentTrack?.filePath)
+        {
+            recomputeSuggestions()
+        }
+        .onChange(of: queue.tracks.count)
+        {
+            recomputeSuggestions()
         }
     }
 
@@ -160,11 +188,13 @@ struct NowPlayingSheet: View
         DragGesture(minimumDistance: 5, coordinateSpace: .global)
             .onChanged
             { value in
-                // While at fully-expanded rest, downward translation
-                // pulls the sheet down. Negative translations would
-                // try to push it above the screen top, which we
-                // disallow by clamping at 0.
-                sheetY = max(0, value.translation.height)
+                // The sheet starts the drag at its fully-expanded
+                // position (sheetY = minSheetY). Add the drag's
+                // downward translation to that. Negative translations
+                // would try to push it above its expanded position,
+                // which we disallow by clamping at minSheetY.
+                sheetY = max(minSheetY,
+                             minSheetY + value.translation.height)
             }
             .onEnded
             { value in
@@ -177,7 +207,7 @@ struct NowPlayingSheet: View
                     withAnimation(.spring(response: 0.32,
                                            dampingFraction: 0.85))
                     {
-                        sheetY = 0
+                        sheetY = minSheetY
                     }
                 }
             }
@@ -189,12 +219,21 @@ struct NowPlayingSheet: View
         Capsule()
             .fill(isHandleGrabbed ? Color.white
                                   : Color.secondary.opacity(0.55))
-            .frame(width: 44, height: 5)
-            // Generous transparent padding so the touch target is
-            // ~80 pt tall x most-of-the-screen wide; the visible pill
-            // stays small.
-            .padding(.vertical, 14)
-            .padding(.horizontal, 100)
+            .frame(width: 88, height: 5)
+            // Expand to the full sheet width so the tap area covers
+            // the entire region above the album art, not just a
+            // narrow strip around the visible capsule. Tap-to-
+            // dismiss feels consistent with the dim-overlay tap and
+            // with the user's expectation that "anywhere above the
+            // art" dismisses.
+            .frame(maxWidth: .infinity)
+            // Symmetric vertical padding so the gap from the sheet's
+            // top edge to the capsule's top equals the gap from the
+            // capsule's bottom to the album art's top. The extent
+            // of this padding (and therefore the position of the
+            // album art) is fixed; we deliberately don't try to
+            // center the artwork on screen.
+            .padding(.vertical, 22)
             .contentShape(Rectangle())
             .onTapGesture { onDismiss() }
             .gesture(handleDrag)
@@ -211,7 +250,8 @@ struct NowPlayingSheet: View
             .onChanged
             { value in
                 if !isHandleGrabbed { isHandleGrabbed = true }
-                sheetY = max(0, value.translation.height)
+                sheetY = max(minSheetY,
+                             minSheetY + value.translation.height)
             }
             .onEnded
             { value in
@@ -225,7 +265,7 @@ struct NowPlayingSheet: View
                     withAnimation(.spring(response: 0.32,
                                            dampingFraction: 0.85))
                     {
-                        sheetY = 0
+                        sheetY = minSheetY
                     }
                 }
             }
@@ -276,18 +316,6 @@ struct NowPlayingSheet: View
                             // full size to artworkMinScale.
                             .scaleEffect(artworkScale, anchor: .top)
                             .offset(y: artworkStickyOffset)
-                            // Sized so the distance from the
-                            // sheet's visible top edge (rounded
-                            // corners at safe-area-top) to the
-                            // artwork's top equals the horizontal
-                            // margin (screen edge to artwork edge).
-                            // On iPhone 14/15 Pro at 393 pt wide:
-                            // horizontal margin = (393 - 320) / 2
-                            // = 36.5 pt; drag-handle vertical
-                            // extent = 14 + 5 + 14 = 33 pt; so
-                            // 33 + 4 ≈ 36.5 visually balances top
-                            // and side margins around the artwork.
-                            .padding(.top, 4)
                             // No gesture on the artwork: even a
                             // simultaneousGesture with a downward-
                             // and-scroll-top-only filter blocks
@@ -307,10 +335,25 @@ struct NowPlayingSheet: View
                             scrubber
                             transport
                             upNext
+                            suggestedTracksSection(scrollProxy: scrollProxy)
                         }
                         .padding(.horizontal, 24)
                         .padding(.top,        24)
                         .padding(.bottom,     32)
+
+                        // Sentinel at the very end of the scroll
+                        // content so .scrollTo("scrollBottom",
+                        // anchor: .bottom) lands the user at the true
+                        // content bottom -- including the 32 pt
+                        // bottom padding above. Scrolling to the last
+                        // suggestion row directly leaves that padding
+                        // below the viewport, which read as "the
+                        // scroll didn't go far enough" and produced
+                        // a constant offset on every subsequent
+                        // scroll-on-add.
+                        Color.clear
+                            .frame(height: 1)
+                            .id("scrollBottom")
                     }
                 }
                 // iOS 18+ scroll-geometry tracking. The
@@ -360,7 +403,7 @@ struct NowPlayingSheet: View
             { value in
                 if value.translation.height > 0 && scrollOffset <= 1
                 {
-                    sheetY = value.translation.height
+                    sheetY = minSheetY + value.translation.height
                 }
             }
             .onEnded
@@ -370,12 +413,12 @@ struct NowPlayingSheet: View
                 {
                     onDismiss()
                 }
-                else if sheetY > 0
+                else if sheetY > minSheetY
                 {
                     withAnimation(.spring(response: 0.32,
                                            dampingFraction: 0.85))
                     {
-                        sheetY = 0
+                        sheetY = minSheetY
                     }
                 }
             }
@@ -425,6 +468,258 @@ struct NowPlayingSheet: View
     private func jump(to index: Int)
     {
         if let next = queue.jump(to: index) { audio.play(next) }
+    }
+
+    // MARK: - Suggested Tracks
+
+    private static let suggestionCount = 5
+
+    @ViewBuilder
+    private func suggestedTracksSection(
+        scrollProxy: ScrollViewProxy
+    ) -> some View
+    {
+        if !suggestedTracks.isEmpty
+        {
+            VStack(alignment: .leading, spacing: 8)
+            {
+                Text("Suggested Tracks")
+                    .font(.headline)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 8)
+
+                LazyVStack(spacing: 0)
+                {
+                    ForEach(Array(suggestedTracks.enumerated()), id: \.element.id)
+                    { (offset, track) in
+                        SuggestedTrackRow(
+                            track:  track,
+                            onAdd:
+                            {
+                                addSuggestionToQueue(track)
+                                // Up Next just grew by one row, which
+                                // pushes Suggested Tracks down inside
+                                // the scroll content. Scroll to the
+                                // sentinel at the very bottom of the
+                                // scroll content so the user stays
+                                // anchored to the bottom of the sheet.
+                                //
+                                // Delayed deliberately so the cross-
+                                // fade has visibly started before the
+                                // scroll begins. Running both on the
+                                // same runloop made the scroll move
+                                // content upward simultaneously with
+                                // the fade, which read as the list
+                                // "competing with the Suggested
+                                // Tracks header" -- rows passing
+                                // through the header's vertical space
+                                // mid-fade.
+                                DispatchQueue.main
+                                    .asyncAfter(deadline: .now() + 0.18)
+                                {
+                                    withAnimation(
+                                        .easeInOut(duration: 0.4)
+                                    )
+                                    {
+                                        scrollProxy.scrollTo(
+                                            "scrollBottom",
+                                            anchor: .bottom
+                                        )
+                                    }
+                                }
+                            },
+                            onPass: { passSuggestion(track) }
+                        )
+                        // Opacity-only transition so the inserted row
+                        // doesn't briefly take an extra layout slot
+                        // while the outgoing row is still in place.
+                        .transition(.opacity)
+
+                        if offset < suggestedTracks.count - 1
+                        {
+                            Divider().padding(.leading, 60)
+                        }
+                    }
+                }
+                // One animation modifier for the whole list. Any
+                // mutation of suggestedTracks (local splice from "+",
+                // pass, or .onChange recompute) animates uniformly
+                // as a single transaction, so rows shift in lock-
+                // step instead of segmenting across multiple
+                // implicit / explicit animation boundaries. 0.4 s
+                // gives the cross-fade enough room to read as a
+                // deliberate transition rather than a flicker.
+                .animation(.easeInOut(duration: 0.4),
+                           value: suggestedTracks)
+            }
+        }
+    }
+
+    // Pool of library music tracks not in the queue, not already
+    // suggested, and not previously passed in this session.
+    private func candidatePool(excluding extra: Set<String> = []) -> [Track]
+    {
+        let queuePaths    = Set(queue.tracks.map(\.filePath))
+        let suggestedSet  = Set(suggestedTracks.map(\.filePath))
+        let exclude       = queuePaths
+            .union(passedTrackPaths)
+            .union(suggestedSet)
+            .union(extra)
+
+        let contextArtists = Set(queue.tracks
+            .map(\.artist).filter { !$0.isEmpty })
+        let contextGenres  = Set(queue.tracks
+            .map(\.genre ).filter { !$0.isEmpty })
+
+        return library.tracks.filter
+        { t in
+            !t.isPodcast
+         && !exclude.contains(t.filePath)
+         && (contextArtists.contains(t.artist)
+          || contextGenres .contains(t.genre))
+        }
+    }
+
+    // Score: 2 for artist match, 1 for genre match. Used to bucket
+    // candidates into score tiers; tracks within a tier are
+    // randomised so the same five don't always surface.
+    private func similarityScore(_ track: Track) -> Int
+    {
+        let contextArtists = Set(queue.tracks
+            .map(\.artist).filter { !$0.isEmpty })
+        let contextGenres  = Set(queue.tracks
+            .map(\.genre ).filter { !$0.isEmpty })
+
+        var s = 0
+        if contextArtists.contains(track.artist) { s += 2 }
+        if contextGenres .contains(track.genre)  { s += 1 }
+        return s
+    }
+
+    // Library music tracks not in the queue, not passed this
+    // session, not already suggested. Used as a fallback when the
+    // context-filtered candidate pool is empty -- e.g. queue is
+    // empty (no context to match), or the queue's artists / genres
+    // don't overlap with anything else in the library. These
+    // tracks have similarityScore 0, so they only surface when the
+    // context pool can't fill a slot.
+    private func randomFallbackPool() -> [Track]
+    {
+        let queuePaths   = Set(queue.tracks.map(\.filePath))
+        let suggestedSet = Set(suggestedTracks.map(\.filePath))
+        let exclude      = queuePaths
+            .union(passedTrackPaths)
+            .union(suggestedSet)
+
+        return library.tracks.filter
+        { t in
+            !t.isPodcast && !exclude.contains(t.filePath)
+        }
+    }
+
+    // Refresh the suggestion list. Preserves existing entries that
+    // are still eligible -- only DROPS entries that have left the
+    // pool (added to queue, passed, or no longer in library) and
+    // FILLS empty slots from the candidate pool (or random fallback
+    // when the context pool is empty). Idempotent: running twice in
+    // a row is a no-op, so the local-splice path and the .onChange
+    // path can both call this without stomping each other or
+    // reshuffling the user's visible list on every action.
+    private func recomputeSuggestions()
+    {
+        let queuePaths   = Set(queue.tracks.map(\.filePath))
+        let libraryPaths = Set(library.tracks.map(\.filePath))
+
+        // Compute the still-eligible subset and only assign back to
+        // @State if it actually differs. removeAll(where:) on the
+        // existing array would mark @State dirty even when no
+        // elements match the predicate, kicking off a re-render
+        // (and a stray animation when .animation(_:value:) is
+        // attached). This keeps idempotent recompute calls truly
+        // free.
+        let stillEligible = suggestedTracks.filter
+        { t in
+            !queuePaths.contains(t.filePath)
+         && !passedTrackPaths.contains(t.filePath)
+         &&  libraryPaths.contains(t.filePath)
+        }
+        if stillEligible != suggestedTracks
+        {
+            suggestedTracks = stillEligible
+        }
+
+        while suggestedTracks.count < Self.suggestionCount
+        {
+            let beforeCount = suggestedTracks.count
+            drawReplacement()
+            // Both pools exhausted; drawReplacement is a no-op.
+            // Break to avoid spinning forever.
+            if suggestedTracks.count == beforeCount { break }
+        }
+    }
+
+    // Pick one fresh track to slot into the suggestions: highest-
+    // scoring candidate first, falling back to random library music
+    // when the context pool is empty. Excludes everything already
+    // in the queue / passed / currently-suggested via candidatePool's
+    // built-in filtering.
+    private func pickNextSuggestion() -> Track?
+    {
+        var pool = candidatePool()
+        if pool.isEmpty { pool = randomFallbackPool() }
+        guard !pool.isEmpty else { return nil }
+
+        let topScore  = pool.map(similarityScore).max() ?? 0
+        let topBucket = pool.filter { similarityScore($0) == topScore }
+        return topBucket.randomElement()
+    }
+
+    // Append a fresh suggestion to the end of the list. Used by
+    // recomputeSuggestions to fill empty slots after entries have
+    // been dropped (e.g. on track change when the previous context
+    // shifted).
+    private func drawReplacement()
+    {
+        if let next = pickNextSuggestion() { suggestedTracks.append(next) }
+    }
+
+    // Swap a tapped suggestion for a fresh draw at the SAME index,
+    // so the row's slot stays put and the content cross-fades in
+    // place rather than the row sliding out and a new one appearing
+    // at the bottom. If the pool is exhausted, just drop the row
+    // (the list shrinks below 5; the section hides at 0).
+    private func replaceSuggestion(at track: Track)
+    {
+        guard let idx = suggestedTracks.firstIndex(
+            where: { $0.filePath == track.filePath }
+        )
+        else { return }
+
+        if let next = pickNextSuggestion()
+        {
+            suggestedTracks[idx] = next
+        }
+        else
+        {
+            suggestedTracks.remove(at: idx)
+        }
+    }
+
+    private func addSuggestionToQueue(_ track: Track)
+    {
+        // Plain mutations -- the LazyVStack's
+        // .animation(_:value: suggestedTracks) modifier picks up the
+        // change and cross-fades the row in place. Wrapping in
+        // withAnimation here would spawn a competing animation
+        // transaction, which read as "segmented" row movement.
+        queue.append([track])
+        replaceSuggestion(at: track)
+    }
+
+    private func passSuggestion(_ track: Track)
+    {
+        passedTrackPaths.insert(track.filePath)
+        replaceSuggestion(at: track)
     }
 
     @ViewBuilder
@@ -651,6 +946,117 @@ private struct UpNextRow: View
         {
             artwork = await loadThumbnail(for: track.filePath)
         }
+    }
+
+    @ViewBuilder
+    private var thumb: some View
+    {
+        Group
+        {
+            if let artwork = artwork
+            {
+                Image(uiImage: artwork)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            }
+            else
+            {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.15))
+                    .overlay(
+                        Image(systemName: "music.note")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    )
+            }
+        }
+        .frame(width: 36, height: 36)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+// Row used by the Suggested Tracks section. Same compact 36 pt thumb +
+// title block as UpNextRow, but the trailing edge has TWO icon buttons
+// instead of a duration label: a blue "+" that adds the suggestion to
+// the queue, and a red "X" that passes (dismisses) it. The pair sits
+// in a tight inner HStack so they read as a button group rather than
+// drifting apart with the row's outer spacing.
+private struct SuggestedTrackRow: View
+{
+    let track:  Track
+    let onAdd:  () -> Void
+    let onPass: () -> Void
+
+    @State private var artwork: UIImage?
+
+    var body: some View
+    {
+        HStack(spacing: 12)
+        {
+            thumb
+            VStack(alignment: .leading, spacing: 2)
+            {
+                Text(track.displayTitle)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                if !track.subtitle.isEmpty
+                {
+                    Text(track.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            HStack(spacing: 8)
+            {
+                addButton
+                passButton
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .task(id: track.filePath)
+        {
+            artwork = await loadThumbnail(for: track.filePath)
+        }
+    }
+
+    @ViewBuilder
+    private var addButton: some View
+    {
+        Button
+        {
+            onAdd()
+        }
+        label:
+        {
+            Image(systemName: "plus.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var passButton: some View
+    {
+        Button
+        {
+            onPass()
+        }
+        label:
+        {
+            Image(systemName: "xmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.red)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder

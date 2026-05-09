@@ -4,8 +4,10 @@ import SwiftUI
 //
 // The Now Playing sheet's vertical position is owned by ONE state
 // variable, sheetY:
-//   sheetY = 0       → sheet fully expanded (covers screen)
-//   sheetY = screenH → sheet entirely off-screen below the mini-bar
+//   sheetY = sheetExpandedY → sheet fully expanded (top edge sits
+//                             50 pt below the safe-area top, leaving
+//                             the underlying nav bar visible-but-dim)
+//   sheetY = screenH        → sheet entirely off-screen below
 // Lift drag from the TransportBar and dismiss drag inside the sheet
 // both write to sheetY, so the upward swipe is fully finger-tracking
 // in the same way the downward swipe is. Tap-to-present and the close
@@ -32,10 +34,10 @@ struct RootView: View
     // Top safe-area inset captured on appear. The lift gesture
     // reports the finger's location in global (screen-coords) space,
     // but sheetY is interpreted relative to the ZStack's frame,
-    // which respects the safe area -- sheetY = 0 places the sheet's
-    // top at safe_area_top. We subtract safeTop when converting from
-    // global location to sheetY so the sheet's top lands exactly
-    // under the finger, no constant delta.
+    // which respects the safe area -- sheetY = sheetExpandedY places
+    // the sheet's top at safe_area_top + sheetExpandedY. We subtract
+    // safeTop when converting from global location to sheetY so the
+    // sheet's top lands exactly under the finger, no constant delta.
     @State private var safeTop: CGFloat = 0
 
     @Environment(\.scenePhase) private var scenePhase
@@ -43,6 +45,14 @@ struct RootView: View
     // Lift threshold (pt of upward drag) past which a release commits
     // to fully-expanded. Below it, the sheet snaps back to the bar.
     private static let liftThreshold: CGFloat = 100
+
+    // Top-most position (in sheet-local coords, i.e. distance from the
+    // top safe-area inset) that the sheet stops at when fully
+    // expanded. Sized to leave the underlying nav bar (back button,
+    // title menu, trailing overflow) visible above the sheet's top
+    // edge. Standard iOS nav bar is 44 pt; we use 50 pt for a small
+    // visual gap between the nav bar and the sheet's rounded top.
+    private static let sheetExpandedY: CGFloat = 50
 
     private static let expansion = Animation.spring(response: 0.42,
                                                      dampingFraction: 0.86)
@@ -65,14 +75,35 @@ struct RootView: View
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Block all interaction with the underlying tabs
                 // while the Now Playing sheet is presented. The
-                // sheet's rounded-corner cutouts at the top sit
-                // right where the navigation bar's back button is,
-                // so without this gate a tap into the corner falls
-                // through to the back button and pops the
-                // underlying stack while the sheet is open. The
-                // gate is released once the sheet snaps fully
-                // off-screen (sheetY = screenH).
+                // visible nav bar at the top is exposed by design
+                // (sheetExpandedY leaves room for it) but should
+                // still be inert -- a tap on the back button while
+                // the sheet is open would pop the underlying stack
+                // out from under the user. The gate is released
+                // once the sheet snaps fully off-screen.
                 .allowsHitTesting(sheetY >= screenH - 1)
+
+            // Dim overlay on top of the tabs layer. Only visible
+            // where the sheet doesn't paint -- i.e. above the
+            // sheet's top edge, in the strip exposing the nav bar.
+            // Opacity tracks sheetY so the dim fades in / out
+            // smoothly with the sheet's lift / dismiss animations.
+            // ignoresSafeArea() omitted on purpose: the system
+            // status bar / dynamic island sits above the safe area
+            // and shouldn't be dimmed by us.
+            //
+            // Tapping the dim dismisses the sheet -- the visible
+            // strip is the user's "tap to escape" affordance, the
+            // same way standard iOS sheet backdrops behave. The
+            // sheet renders on top of the dim, so the tap gesture
+            // only fires in the area above the sheet's top edge.
+            // Hit-testing is gated by sheetY so the invisible dim
+            // (sheet hidden) doesn't swallow taps headed for the
+            // tabs layer underneath.
+            Color.black
+                .opacity(dimOpacity)
+                .allowsHitTesting(sheetY < screenH - 1)
+                .onTapGesture { dismissSheet() }
 
             // NowPlayingSheet is rendered unconditionally and just
             // offset off-screen via sheetY when it shouldn't be
@@ -91,10 +122,11 @@ struct RootView: View
             // when there's no current track, so there's no tap
             // affordance to expand the sheet during that state.
             NowPlayingSheet(
-                sheetY:    $sheetY,
-                onDismiss: { dismissSheet() }
+                sheetY:     $sheetY,
+                minSheetY:  Self.sheetExpandedY,
+                onDismiss:  { dismissSheet() }
             )
-            .offset(y: max(0, sheetY))
+            .offset(y: max(Self.sheetExpandedY, sheetY))
         }
         // No scenePhase auto-present: the sheet is only ever lifted
         // by an explicit user gesture (tap the mini transport bar or
@@ -129,15 +161,15 @@ struct RootView: View
         // the sheet stuck partially visible at the bottom when the
         // user returns to Stylus. Snapping to whichever endpoint
         // sheetY is already closer to keeps the sheet committed
-        // (full-screen or hidden) the next time it's seen, and is a
-        // no-op if the user wasn't dragging (sheetY was already 0
-        // or screenH, so it stays where it was).
+        // (fully expanded or hidden) the next time it's seen, and
+        // is a no-op if the user wasn't dragging (sheetY was already
+        // sheetExpandedY or screenH, so it stays where it was).
         .onChange(of: scenePhase)
         { _, newPhase in
             if newPhase != .active && screenH > 0
             {
                 let midpoint = screenH * 0.5
-                sheetY = sheetY < midpoint ? 0 : screenH
+                sheetY = sheetY < midpoint ? Self.sheetExpandedY : screenH
             }
         }
         // Custom env key (NOT .environmentObject) so consumers don't
@@ -242,7 +274,7 @@ struct RootView: View
         // after a partial drag.
         if sheetY < screenH * 0.5 { return }
         sheetY = screenH
-        withAnimation(Self.expansion) { sheetY = 0 }
+        withAnimation(Self.expansion) { sheetY = Self.sheetExpandedY }
     }
 
     private func dismissSheet()
@@ -250,22 +282,34 @@ struct RootView: View
         withAnimation(Self.collapse) { sheetY = screenH }
     }
 
+    // Linear dim factor: 0 when sheet is fully hidden, 0.6 when fully
+    // expanded. The .opacity modifier on the dim Color reads this and
+    // animates smoothly along with sheetY.
+    private var dimOpacity: Double
+    {
+        let range = screenH - Self.sheetExpandedY
+        guard range > 0 else { return 0 }
+        let progress = 1 - (sheetY - Self.sheetExpandedY) / range
+        return Double(min(1, max(0, progress))) * 0.6
+    }
+
     private func liftDragChanged(locationY: CGFloat)
     {
         // locationY is the finger's current Y in global (screen)
         // coords. Subtract safeTop to convert to the sheet's local
-        // offset reference (sheetY = 0 places the sheet's top at
-        // safe_area_top). With this, sheet's top tracks finger.y
-        // exactly -- pull up from anywhere on the bar and the
-        // sheet's top is right under the finger.
-        sheetY = min(screenH, max(0, locationY - safeTop))
+        // offset reference. Clamp at sheetExpandedY so the sheet
+        // can't be lifted higher than its fully-expanded position
+        // (top edge sits 50 pt below the safe-area-top, leaving
+        // the nav bar visible above).
+        sheetY = min(screenH,
+                     max(Self.sheetExpandedY, locationY - safeTop))
     }
 
     private func liftDragEnded(translationHeight: CGFloat)
     {
         if translationHeight < -Self.liftThreshold
         {
-            withAnimation(Self.expansion) { sheetY = 0 }
+            withAnimation(Self.expansion) { sheetY = Self.sheetExpandedY }
         }
         else
         {
