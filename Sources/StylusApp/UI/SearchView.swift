@@ -14,10 +14,10 @@ struct SearchView: View
 
     var body: some View
     {
-        // SearchContent is split into its own view so it can read
-        // @Environment(\.isSearching) (only meaningful inside a
-        // .searchable scope) and switch the empty-state on / off as
-        // the keyboard comes up and goes away.
+        // SearchContent is split into its own view so it sits
+        // inside the .searchable scope. The query is forwarded as
+        // a plain String; the empty-state below renders based
+        // solely on whether query is empty.
         SearchContent(query: query)
             .tabTitleMenu("Search")
             .searchable(text: $query,
@@ -82,8 +82,7 @@ private struct SearchContent: View
 {
     let query: String
 
-    @Environment(\.isSearching) private var isSearching
-    @Environment(\.tabRouter)   private var router
+    @Environment(\.tabRouter) private var router
     @EnvironmentObject var library:   LibraryStore
     @EnvironmentObject var playlists: PlaylistStore
 
@@ -103,31 +102,23 @@ private struct SearchContent: View
         }
     }
 
-    // Three-way empty state:
-    //  - query empty AND search field NOT active -> "Search your
-    //    library" prompt.
-    //  - query empty BUT search field active (keyboard up, user just
-    //    tapped the bar and hasn't typed yet) -> blank surface so
-    //    the prompt doesn't shout from beneath the keyboard. Snaps
-    //    back the moment the user dismisses search.
+    // Two-way empty state:
+    //  - query empty (keyboard up or down) -> "Search your library"
+    //    prompt fills the space between the search bar at the top
+    //    and the keyboard / mini transport bar at the bottom, so
+    //    the surface doesn't look unfinished while the user has
+    //    just focused the field but hasn't typed yet.
     //  - query non-empty with no matches -> "No results for ..."
     @ViewBuilder
     private var emptyState: some View
     {
         if query.isEmpty
         {
-            if isSearching
-            {
-                Color.clear
-            }
-            else
-            {
-                EmptyStateView(
-                    title:       "Search your library",
-                    systemImage: "magnifyingglass",
-                    message:     "Find tracks, artists, albums, podcasts, episodes, and playlists."
-                )
-            }
+            EmptyStateView(
+                title:       "Search your library",
+                systemImage: "magnifyingglass",
+                message:     "Find tracks, artists, albums, podcasts, episodes, and playlists."
+            )
         }
         else
         {

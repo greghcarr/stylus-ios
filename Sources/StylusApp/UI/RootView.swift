@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Top-level chrome.
 //
@@ -273,6 +274,18 @@ struct RootView: View
         // somewhere to start from in case the user re-tapped right
         // after a partial drag.
         if sheetY < screenH * 0.5 { return }
+        // Resign whatever has first responder before the sheet
+        // animates up. Otherwise tapping the mini bar while
+        // SearchView's keyboard is visible leaves the keyboard on
+        // screen behind the sheet (visible in the gap above the
+        // sheet's top, since sheetExpandedY leaves room for the
+        // underlying nav bar). Sending resignFirstResponder to
+        // nil routes it to the current first responder, dismissing
+        // both the keyboard and the search field's focus state.
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil, from: nil, for: nil
+        )
         sheetY = screenH
         withAnimation(Self.expansion) { sheetY = Self.sheetExpandedY }
     }
@@ -309,6 +322,16 @@ struct RootView: View
     {
         if translationHeight < -Self.liftThreshold
         {
+            // Commit-to-expanded: same keyboard / search dismiss
+            // as presentSheet's tap path. Mid-drag we leave the
+            // keyboard alone (the user may yank back if they
+            // didn't mean to expand); only on commit do we
+            // resign first responder. Sheet snap and keyboard
+            // slide-down then animate together.
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder),
+                to: nil, from: nil, for: nil
+            )
             withAnimation(Self.expansion) { sheetY = Self.sheetExpandedY }
         }
         else

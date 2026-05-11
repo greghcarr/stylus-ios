@@ -6,15 +6,22 @@ import SwiftUI
 // section that contains it (List overlays especially can pin against the
 // section's leading edge instead of the screen's).
 //
-// .ignoresSafeArea() on the outer frame is what pins this to the
-// SCREEN'S vertical centre rather than the inset content area's
-// centre. Without it, the frame is squeezed between the nav bar
-// above and the TransportBar (added as a safeAreaInset) below; their
-// asymmetry shifts the available-area centre slightly below the
-// screen's geometric centre, which reads as "the empty-state is too
-// low" to the user. Extending into the safe areas gives us the full
-// screen height to centre against; the chrome still draws on top so
-// nothing is clipped or hidden.
+// .ignoresSafeArea(.container) on the outer frame is what pins this
+// to the SCREEN'S vertical centre rather than the inset content
+// area's centre. Without it, the frame is squeezed between the nav
+// bar above and the TransportBar (added as a safeAreaInset) below;
+// their asymmetry shifts the available-area centre slightly below
+// the screen's geometric centre, which reads as "the empty-state is
+// too low" to the user. Extending into the container safe areas
+// gives us the full screen height to centre against; the chrome
+// still draws on top so nothing is clipped or hidden.
+//
+// We DO respect the keyboard safe area (note: .container, not
+// .all). When SearchView's empty state renders while the keyboard
+// is up, the available area shrinks to "above-the-keyboard" and
+// the prompt re-centres into that band -- otherwise it would sit
+// at the geometric centre of the screen and disappear behind the
+// keyboard.
 struct EmptyStateView<Action: View>: View
 {
     let title:       String
@@ -59,7 +66,7 @@ struct EmptyStateView<Action: View>: View
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
+        .ignoresSafeArea(.container)
     }
 }
 
