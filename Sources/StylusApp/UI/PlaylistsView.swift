@@ -217,8 +217,17 @@ struct PlaylistDetailView: View
     @EnvironmentObject var playlists: PlaylistStore
     @EnvironmentObject var library:   LibraryStore
 
-    @State private var showRenameAlert: Bool   = false
-    @State private var renameValue:     String = ""
+    @State private var showRenameAlert: Bool     = false
+    @State private var renameValue:     String   = ""
+    // Manual editMode binding: the toolbar's "Change Playlist
+    // Order..." menu item flips this to .active, and the trailing
+    // "Done" button (which replaces the ellipsis menu while
+    // editing) flips it back to .inactive. We avoid SwiftUI's
+    // EditButton because the user wanted reorder buried inside
+    // the existing menu rather than as a permanent toolbar
+    // affordance. The List's reorder gesture (.onMove) reads this
+    // value via .environment(\.editMode, ...) below.
+    @State private var editMode:        EditMode = .inactive
 
     @Environment(\.dismiss) private var dismiss
 
@@ -243,55 +252,77 @@ struct PlaylistDetailView: View
         }
         .navigationTitle(playlist?.name ?? "Playlist")
         .navigationBarTitleDisplayMode(.inline)
+        // Bind editMode @State into the env so the List below
+        // (with .onMove) honours it. Standard SwiftUI plumbing for
+        // EditButton-less edit-mode control.
+        .environment(\.editMode, $editMode)
         .toolbar
         {
-            // Trailing: Edit (drag-to-reorder tracks). Removal
-            // happens via the long-press contextMenu's "Remove from
-            // Playlist" item. We tried adding an Edit-mode trash
-            // button on each row and it caused UITableView's
-            // reorder-drag session to hang -- the row's outer view
-            // type changed (Button -> HStack) when entering edit
-            // mode, which broke UIKit's drag tracking and left the
-            // dragged row's preview floating on top of the OS
-            // shell after the app was closed. Reverted to a single
-            // outer Button structure for stable cell identity.
+            // While editing, the trailing slot becomes a "Done"
+            // button to exit edit mode. While not editing, it's
+            // the standard ellipsis menu containing Change Order /
+            // Rename / Delete. Removal of individual tracks
+            // happens via the long-press contextMenu's "Remove
+            // from Playlist" item -- we tried adding an Edit-mode
+            // trash button on each row and it hung UITableView's
+            // reorder-drag session (the row's outer view type
+            // changed mid-edit-mode-toggle, which broke UIKit's
+            // drag tracking and left the dragged row's preview
+            // floating on top of the OS shell after closing the
+            // app).
             ToolbarItem(placement: .topBarTrailing)
             {
-                EditButton()
-            }
-            // Plus a small overflow with rename / delete-playlist
-            // since the stock libraryActionsToolbar isn't applied here
-            // (this is a leaf view, not a tab root).
-            ToolbarItem(placement: .topBarTrailing)
-            {
-                Menu
+                if editMode.isEditing
                 {
-                    Button
+                    Button("Done")
                     {
-                        renameValue     = playlist?.name ?? ""
-                        showRenameAlert = true
+                        editMode = .inactive
                     }
-                    label:
+                    .fontWeight(.semibold)
+                }
+                else
+                {
+                    Menu
                     {
-                        Label("Rename Playlist\u{2026}", systemImage: "pencil")
-                    }
-
-                    Button(role: .destructive)
-                    {
-                        if let id = playlist?.id
+                        Button
                         {
-                            playlists.deletePlaylist(id: id)
-                            dismiss()
+                            editMode = .active
+                        }
+                        label:
+                        {
+                            Label("Change Playlist Order\u{2026}",
+                                  systemImage: "arrow.up.arrow.down")
+                        }
+
+                        Button
+                        {
+                            renameValue     = playlist?.name ?? ""
+                            showRenameAlert = true
+                        }
+                        label:
+                        {
+                            Label("Rename Playlist\u{2026}", systemImage: "pencil")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive)
+                        {
+                            if let id = playlist?.id
+                            {
+                                playlists.deletePlaylist(id: id)
+                                dismiss()
+                            }
+                        }
+                        label:
+                        {
+                            Label("Delete Playlist", systemImage: "trash")
                         }
                     }
                     label:
                     {
-                        Label("Delete Playlist", systemImage: "trash")
+                        Image(systemName: "ellipsis.circle")
                     }
-                }
-                label:
-                {
-                    Image(systemName: "ellipsis.circle")
                 }
             }
         }
