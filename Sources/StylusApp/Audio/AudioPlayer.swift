@@ -67,6 +67,13 @@ final class AudioPlayer: ObservableObject
     // play / pause / resume / stop / seek, not on every timer tick.
     var onPlaybackStateChanged: (() -> Void)?
 
+    // Called once from handleTrackEnd when the queue is exhausted, just
+    // before stop(). NowPlayingSheet hooks this for Autoplay: when
+    // engaged, the handler appends a Suggested Track to the queue;
+    // handleTrackEnd then re-checks queue.advanceForAutoFinish() and
+    // plays the appended track instead of stopping.
+    var onQueueExhausted: (() -> Void)?
+
     private weak var queue: PlayQueue?
 
     init(queue: PlayQueue? = nil)
@@ -410,8 +417,25 @@ final class AudioPlayer: ObservableObject
 
     func playNext()
     {
-        guard let next = queue?.advance() else { stop(); return }
-        play(next)
+        if let next = queue?.advance()
+        {
+            play(next)
+            return
+        }
+        // Queue is at its last entry. Give onQueueExhausted (the
+        // NowPlayingSheet's Autoplay hook) a chance to extend it,
+        // then retry. Mirrors handleTrackEnd's exhaustion path so
+        // the user-tapped "next" button behaves the same way as a
+        // natural end-of-track.
+        onQueueExhausted?()
+        if let next = queue?.advance()
+        {
+            play(next)
+        }
+        else
+        {
+            stop()
+        }
     }
 
     // Mimics the iOS music-app convention: < 3 s into the track restarts it,
@@ -485,7 +509,20 @@ final class AudioPlayer: ObservableObject
         }
         else
         {
-            stop()
+            // Queue is exhausted. Give external code (Autoplay in
+            // NowPlayingSheet) a chance to extend it before we stop.
+            // The handler is synchronous; if it appends a track,
+            // advanceForAutoFinish will now succeed and we play that
+            // instead of stopping.
+            onQueueExhausted?()
+            if let next = queue?.advanceForAutoFinish()
+            {
+                play(next, fadeOutPrevious: false)
+            }
+            else
+            {
+                stop()
+            }
         }
     }
 

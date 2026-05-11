@@ -29,6 +29,13 @@ struct TransportBar: View
     // at the top of the bar. Drives the handle's white-on-grab fill
     // change so the user gets a clear "I have it" affordance.
     @State private var isHandleGrabbed: Bool    = false
+    // Mirrors the NowPlayingSheet's Autoplay toggle (same UserDefaults
+    // key). When engaged, the next-track button stays enabled even
+    // when queue.canAdvance is false -- tapping it triggers the same
+    // Autoplay path AudioPlayer.handleTrackEnd uses (append the top
+    // suggestion via onQueueExhausted, then advance into it).
+    @AppStorage("SuggestedTracksAutoplayEnabled")
+    private var autoplayEnabled: Bool = false
 
     var body: some View
     {
@@ -280,10 +287,11 @@ struct TransportBar: View
             {
                 Image(systemName: "forward.end.fill")
                     .font(.system(size: 14, weight: .semibold))
-                    .opacity(queue.canAdvance ? 1.0 : 0.35)
+                    .opacity(queue.canAdvance || autoplayEnabled
+                                ? 1.0 : 0.35)
             }
             .buttonStyle(SilverCircleButtonStyle(size: 36))
-            .disabled(!queue.canAdvance)
+            .disabled(!queue.canAdvance && !autoplayEnabled)
         }
     }
 

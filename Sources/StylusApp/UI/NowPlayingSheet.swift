@@ -40,6 +40,14 @@ struct NowPlayingSheet: View
     // new track already in the slot. Default 1 so the section is
     // visible at rest.
     @State private var suggestionsSectionOpacity: Double = 1
+    // Autoplay toggle in the Suggested Tracks section header. When
+    // engaged, the AudioPlayer.onQueueExhausted callback below
+    // appends the top suggestion to the queue so playback continues;
+    // when disengaged, the queue's last track ends in stop() and
+    // the music stops. Defaults to false on first launch and
+    // persists across sessions via UserDefaults (@AppStorage).
+    @AppStorage("SuggestedTracksAutoplayEnabled")
+    private var autoplayEnabled: Bool = false
     // True while the user is actively gripping the drag handle at
     // the top of the sheet (NOT while they're dragging the artwork
     // region, which uses dismissDrag and leaves this alone). Drives
@@ -159,6 +167,16 @@ struct NowPlayingSheet: View
         {
             sliderValue = audio.currentTime
             recomputeSuggestions()
+            // Wire Autoplay into the AudioPlayer's queue-exhausted
+            // hook. The closure runs synchronously from
+            // handleTrackEnd on MainActor; if Autoplay is engaged
+            // and a suggestion is available, we append it to the
+            // queue and AudioPlayer's retry of advanceForAutoFinish
+            // picks it up and plays it.
+            audio.onQueueExhausted =
+            {
+                autoplayIfEnabled()
+            }
         }
         // Re-rank the Suggested Tracks list whenever the playback
         // context changes. Watching currentTrack.filePath catches
@@ -490,10 +508,16 @@ struct NowPlayingSheet: View
         {
             VStack(alignment: .leading, spacing: 8)
             {
-                Text("Suggested Tracks")
-                    .font(.headline)
-                    .padding(.horizontal, 4)
-                    .padding(.top, 8)
+                HStack(spacing: 10)
+                {
+                    Text(inPodcastMode ? "Suggested Podcasts"
+                                       : "Suggested Tracks")
+                        .font(.headline)
+                    autoplayToggle
+                    Spacer()
+                }
+                .padding(.horizontal, 4)
+                .padding(.top, 8)
 
                 // Plain VStack (not LazyVStack): with at most 5 rows
                 // there's no virtualisation benefit, and LazyVStack's
@@ -519,13 +543,6 @@ struct NowPlayingSheet: View
                             },
                             onPass: { passSuggestion(track) }
                         )
-                        // Opacity-only transition so the cross-fade
-                        // pass animation lands in place rather than
-                        // sliding the new row in from a layout slot
-                        // shift. "+" doesn't rely on this transition
-                        // (it fades the whole section at once via
-                        // suggestionsSectionOpacity).
-                        .transition(.opacity)
 
                         if offset < suggestedTracks.count - 1
                         {
@@ -534,28 +551,25 @@ struct NowPlayingSheet: View
                     }
                 }
             }
-            // Section-level opacity drives the "+" fade-out + fade-
-            // in. 1 at rest; "+" animates 1 -> 0, mutates queue +
-            // suggestions while invisible, snaps the scroll, then
-            // animates 0 -> 1 back.
+            // Section-level opacity drives both "+" and "Pass".
+            // 1 at rest; either action animates 1 -> 0, mutates
+            // suggestions (and queue + scroll for "+") while
+            // invisible, then animates 0 -> 1 back. Identical
+            // pacing for both interactions.
             //
             // .animation bound specifically to suggestionsSection-
             // Opacity (NOT the broader view) so that only opacity
-            // changes animate. The queue mutation that happens
-            // during the invisible window also re-renders the row
-            // (new artwork @State for the freshly-identitied row,
-            // Up Next pushing the section down, scrollTo snapping
-            // the viewport): if any of those got swept into the
-            // same animation transaction as the opacity, the user
-            // saw the row contents "slide up into place" during
-            // fade-in. Scoping the animation to opacity only lets
-            // those layout / state changes resolve instantly while
-            // invisible, and the only thing the user sees is a
-            // clean alpha ramp.
-            //
-            // Pass leaves this at 1 and uses the row's
-            // .transition(.opacity) under withAnimation in
-            // passSuggestion for an in-place cross-fade.
+            // changes animate. The mutations that happen during
+            // the invisible window also re-render the rows (new
+            // artwork @State for the freshly-identitied row, Up
+            // Next pushing the section down on "+", scrollTo
+            // snapping the viewport on "+"): if any of those got
+            // swept into the same animation transaction as the
+            // opacity, the user saw row contents "slide up into
+            // place" during fade-in. Scoping the animation to
+            // opacity only lets those layout / state changes
+            // resolve instantly while invisible, and the only
+            // thing the user sees is a clean alpha ramp.
             .opacity(suggestionsSectionOpacity)
             .animation(.easeInOut(duration: Self.suggestionsFadeDuration),
                        value: suggestionsSectionOpacity)
@@ -613,8 +627,38 @@ struct NowPlayingSheet: View
 
     private static let suggestionsFadeDuration: TimeInterval = 0.2
 
-    // Pool of library music tracks not in the queue, not already
-    // suggested, and not previously passed in this session.
+    // Silver gradient for the Autoplay-engaged pill background.
+    // Matches SilverCircleButtonStyle's metallic top-light-to-
+    // bottom-darker fill so the pill visually ties to the
+    // transport buttons (prev / play / next).
+    private static let silverPillGradient = LinearGradient(
+        colors:
+        [
+            Color(white: 0.92),
+            Color(white: 0.78),
+            Color(white: 0.70)
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    // True when the user is squarely in a podcast listening session:
+    // the currently playing track is a podcast AND the queue is
+    // either empty or contains only podcasts. A queue with any
+    // music in it (even while a podcast happens to be playing)
+    // stays in music mode -- the section reads "Suggested Tracks"
+    // and pulls music suggestions. Drives both the section title
+    // and the pool filters below.
+    private var inPodcastMode: Bool
+    {
+        guard audio.currentTrack?.isPodcast == true else { return false }
+        return queue.tracks.isEmpty
+            || queue.tracks.allSatisfy { $0.isPodcast }
+    }
+
+    // Pool of library tracks matching the current playback mode
+    // (music or podcast), not in the queue, not already suggested,
+    // and not previously passed in this session.
     private func candidatePool(excluding extra: Set<String> = []) -> [Track]
     {
         let queuePaths    = Set(queue.tracks.map(\.filePath))
@@ -623,6 +667,7 @@ struct NowPlayingSheet: View
             .union(passedTrackPaths)
             .union(suggestedSet)
             .union(extra)
+        let podcastMode   = inPodcastMode
 
         let contextArtists = Set(queue.tracks
             .map(\.artist).filter { !$0.isEmpty })
@@ -631,7 +676,7 @@ struct NowPlayingSheet: View
 
         return library.tracks.filter
         { t in
-            !t.isPodcast
+            t.isPodcast == podcastMode
          && !exclude.contains(t.filePath)
          && (contextArtists.contains(t.artist)
           || contextGenres .contains(t.genre))
@@ -654,12 +699,13 @@ struct NowPlayingSheet: View
         return s
     }
 
-    // Library music tracks not in the queue, not passed this
-    // session, not already suggested. Used as a fallback when the
-    // context-filtered candidate pool is empty -- e.g. queue is
-    // empty (no context to match), or the queue's artists / genres
-    // don't overlap with anything else in the library. These
-    // tracks have similarityScore 0, so they only surface when the
+    // Library tracks matching the current playback mode (music or
+    // podcast), not in the queue, not passed this session, not
+    // already suggested. Used as a fallback when the context-
+    // filtered candidate pool is empty -- e.g. queue is empty (no
+    // context to match), or the queue's artists / genres don't
+    // overlap with anything else in the library. These tracks
+    // have similarityScore 0, so they only surface when the
     // context pool can't fill a slot.
     private func randomFallbackPool() -> [Track]
     {
@@ -668,10 +714,11 @@ struct NowPlayingSheet: View
         let exclude      = queuePaths
             .union(passedTrackPaths)
             .union(suggestedSet)
+        let podcastMode  = inPodcastMode
 
         return library.tracks.filter
         { t in
-            !t.isPodcast && !exclude.contains(t.filePath)
+            t.isPodcast == podcastMode && !exclude.contains(t.filePath)
         }
     }
 
@@ -687,6 +734,7 @@ struct NowPlayingSheet: View
     {
         let queuePaths   = Set(queue.tracks.map(\.filePath))
         let libraryPaths = Set(library.tracks.map(\.filePath))
+        let podcastMode  = inPodcastMode
 
         // Compute the still-eligible subset and only assign back to
         // @State if it actually differs. removeAll(where:) on the
@@ -695,11 +743,17 @@ struct NowPlayingSheet: View
         // (and a stray animation when .animation(_:value:) is
         // attached). This keeps idempotent recompute calls truly
         // free.
+        //
+        // Also drops suggestions whose isPodcast doesn't match the
+        // current playback mode -- otherwise switching from music
+        // to a podcast (or vice versa) would leave stale
+        // suggestions from the previous mode in the list.
         let stillEligible = suggestedTracks.filter
         { t in
             !queuePaths.contains(t.filePath)
          && !passedTrackPaths.contains(t.filePath)
          &&  libraryPaths.contains(t.filePath)
+         &&  t.isPodcast == podcastMode
         }
         if stillEligible != suggestedTracks
         {
@@ -763,18 +817,106 @@ struct NowPlayingSheet: View
         }
     }
 
-    // Pass uses an in-place row cross-fade via the row's
-    // .transition(.opacity); the explicit withAnimation here is
-    // what gives the transition its animation context (the section
-    // no longer has an .animation(_:value:) modifier -- "+" handles
-    // its own animation through suggestionsSectionOpacity).
+    // Pass mirrors the "+" flow: fade the section to 0, mutate
+    // (passedTrackPaths + suggestion swap) while invisible, then
+    // fade back in. Same total timeframe (~2 * fadeDuration) as
+    // "+" so the two interactions feel paced identically. No scroll
+    // snap here -- pass doesn't grow the queue and the section's
+    // y position in the scroll content is unchanged.
     private func passSuggestion(_ track: Track)
     {
-        withAnimation(.easeInOut(duration: 0.4))
+        suggestionsSectionOpacity = 0
+        DispatchQueue.main
+            .asyncAfter(deadline: .now() + Self.suggestionsFadeDuration)
         {
             passedTrackPaths.insert(track.filePath)
             replaceSuggestion(at: track)
+            DispatchQueue.main.async
+            {
+                suggestionsSectionOpacity = 1
+            }
         }
+    }
+
+    // Text label + colour-coded glyph to the right of the
+    // "Suggested Tracks" header. Tap flips autoplayEnabled; the
+    // AudioPlayer's onQueueExhausted callback (set in .task above)
+    // checks the flag at end-of-queue time to decide whether to
+    // extend the queue with a suggestion or stop.
+    //
+    // Style follows the row's shuffle / repeat toggles: text in
+    // Color.secondary in both states (so the visual weight matches
+    // their resting look), with an inline glyph that flips between
+    // a blue checkmark (engaged) and a red X (disengaged). No
+    // background pill -- the glyph carries the state colour.
+    private var autoplayToggle: some View
+    {
+        Button
+        {
+            autoplayEnabled.toggle()
+        }
+        label:
+        {
+            HStack(spacing: 4)
+            {
+                Text(autoplayEnabled ? "Autoplay: on"
+                                     : "Autoplay: off")
+                    .foregroundStyle(
+                        autoplayEnabled ? Color.black
+                                        : Color.secondary
+                    )
+                Image(systemName: autoplayEnabled ? "checkmark"
+                                                  : "xmark")
+                    .foregroundStyle(
+                        autoplayEnabled ? Color.blue
+                                        : Color.red
+                    )
+            }
+            .font(.caption)
+            .fontWeight(.medium)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            // Enabled: silver-gradient capsule with rim + drop
+            // shadow matching the transport buttons (see
+            // SilverCircleButtonStyle), with black "Autoplay:"
+            // text against the silver. Disabled: no background --
+            // the red X glyph alone carries the "off" indication.
+            .background
+            {
+                if autoplayEnabled
+                {
+                    Capsule()
+                        .fill(Self.silverPillGradient)
+                        .overlay
+                        {
+                            Capsule().stroke(
+                                Color(white: 0.55),
+                                lineWidth: 0.5
+                            )
+                        }
+                        .shadow(color: .black.opacity(0.18),
+                                radius: 1.5,
+                                y: 1)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.15),
+                   value: autoplayEnabled)
+    }
+
+    // Called synchronously from AudioPlayer.handleTrackEnd when the
+    // queue is exhausted. If Autoplay is engaged and a suggestion
+    // is available, append it to the queue: AudioPlayer's retry of
+    // advanceForAutoFinish then picks it up and plays it. The
+    // .onChange(of: queue.tracks.count) handler will fire on the
+    // next runloop, run recomputeSuggestions, drop the now-queued
+    // track from suggestedTracks, and refill the bottom slot.
+    private func autoplayIfEnabled()
+    {
+        guard autoplayEnabled               else { return }
+        guard let first = suggestedTracks.first else { return }
+        queue.append([first])
     }
 
     @ViewBuilder
@@ -893,10 +1035,11 @@ struct NowPlayingSheet: View
             {
                 Image(systemName: "forward.end.fill")
                     .font(.system(size: 26))
-                    .opacity(queue.canAdvance ? 1.0 : 0.35)
+                    .opacity(queue.canAdvance || autoplayEnabled
+                                ? 1.0 : 0.35)
             }
             .buttonStyle(SilverCircleButtonStyle(size: 64))
-            .disabled(!queue.canAdvance)
+            .disabled(!queue.canAdvance && !autoplayEnabled)
 
             Spacer(minLength: 12)
             repeatToggle
@@ -927,6 +1070,10 @@ struct NowPlayingSheet: View
                 .foregroundStyle(queue.isShuffled ? Color.accentColor
                                                   : Color.secondary)
                 .frame(width: 44, height: 44)
+                .background
+                {
+                    if queue.isShuffled { silverDisc }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -950,9 +1097,31 @@ struct NowPlayingSheet: View
                 .foregroundStyle(queue.repeatMode == .off ? Color.secondary
                                                           : Color.accentColor)
                 .frame(width: 44, height: 44)
+                .background
+                {
+                    if queue.repeatMode != .off { silverDisc }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // Silver gradient circle matching the transport buttons. Used
+    // as the "on" indicator behind the shuffle / repeat glyphs.
+    // Same fill / rim / shadow as SilverCircleButtonStyle so the
+    // toggle, when engaged, reads as a full transport-style disc.
+    private var silverDisc: some View
+    {
+        Circle()
+            .fill(Self.silverPillGradient)
+            .overlay
+            {
+                Circle().stroke(Color(white: 0.55),
+                                lineWidth: 0.5)
+            }
+            .shadow(color: .black.opacity(0.18),
+                    radius: 1.5,
+                    y: 1)
     }
 
     private func format(_ seconds: TimeInterval) -> String
