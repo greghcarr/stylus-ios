@@ -5,7 +5,7 @@ import SwiftUI
 // returns via the .topBarLeading "Home" button on every non-Home tab.
 enum AppTab: String, CaseIterable, Identifiable
 {
-    case home, library, artists, albums, genres, playlists, podcasts, search
+    case home, library, artists, albums, genres, playlists, podcasts, search, sync
 
     var id: String { rawValue }
 
@@ -21,6 +21,7 @@ enum AppTab: String, CaseIterable, Identifiable
         case .playlists: return "Playlists"
         case .podcasts:  return "Podcasts"
         case .search:    return "Search"
+        case .sync:      return "Sync"
         }
     }
 
@@ -43,6 +44,7 @@ enum AppTab: String, CaseIterable, Identifiable
         case .playlists: return "list.bullet.rectangle.fill"
         case .podcasts:  return "mic.fill"
         case .search:    return "magnifyingglass"
+        case .sync:      return "arrow.triangle.2.circlepath"
         }
     }
 }

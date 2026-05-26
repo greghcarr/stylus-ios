@@ -40,6 +40,18 @@ targets:
         UIApplicationSupportsIndirectInputEvents: true
         UIBackgroundModes:
           - audio
+        # Local network access for the Mac -> iPhone library sync
+        # feature. iOS 14+ prompts the user with the text below on
+        # first use of Bonjour / a local-network socket; without
+        # this key the prompt never appears and operations silently
+        # fail. NSBonjourServices declares the Bonjour service
+        # types the app browses for / publishes -- iOS rejects
+        # browses for unlisted types since iOS 14.
+        NSLocalNetworkUsageDescription: >-
+          Stylus uses your local network to discover your Mac and
+          sync your music library, podcasts, metadata, and playlists.
+        NSBonjourServices:
+          - _stylus-sync._tcp
         # Launch storyboard renders the app icon at 180 pt (rounded
         # square) centered on the system background. The SwiftUI
         # SplashView reproduces the same visual once SwiftUI takes

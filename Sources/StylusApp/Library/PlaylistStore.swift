@@ -175,6 +175,15 @@ final class PlaylistStore: ObservableObject
         }
     }
 
+    // Public re-read entry point. The sync flow writes a new
+    // playlists.json directly via FileManager, then calls this so
+    // the in-memory list refreshes for any SwiftUI view bound to
+    // @Published playlists.
+    func reload()
+    {
+        load()
+    }
+
     private func load()
     {
         guard let data = try? Data(contentsOf: storeURL) else

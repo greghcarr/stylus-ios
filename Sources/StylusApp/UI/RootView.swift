@@ -256,6 +256,7 @@ struct RootView: View
                 HomeView()
             }
         case .search:    SearchView()
+        case .sync:      SyncView()
         }
     }
 
